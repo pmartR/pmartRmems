@@ -8,7 +8,7 @@
 #' @export
 #'
 #' @examples
-transform_data <- function(rRNA_obj, method = "clr") {
+transform_data <- function(rRNA_obj, method = "clr", shift = 0.5) {
 
   if (class(rRNA_obj) != "rRNAdata")
     stop("rRNA_obj must be of class 'rRNAdata.' Use ?as.rRNAdata for more info.")
@@ -28,7 +28,7 @@ transform_data <- function(rRNA_obj, method = "clr") {
     ind <- which(colnames(dat) == edata_cname)
 
     # log transform all but ID
-    num_data <- dat[,-ind] + 0.5
+    num_data <- dat[,-ind] + shift
     # num_data[num_data == 0] <- 0.5 # for now, zeros will transform to log2(0.5) = -1
     log2dat <- log2(num_data)
 
@@ -49,7 +49,7 @@ transform_data <- function(rRNA_obj, method = "clr") {
 
   # ALR transformation
   if(method == "alr") {
-    transdata <- dat + 0.5
+    transdata <- dat
   # transdata[transdata == 0] <- 0.5 # for now, zeros will transform to log2(0.5) = -1
     for(i in 2:ncol(dat)) {
       vec <- dat[,i]

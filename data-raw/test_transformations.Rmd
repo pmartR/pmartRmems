@@ -1,0 +1,105 @@
+---
+title: "Testing Transformation Methods"
+output: 
+  html_document: 
+    toc: yes
+---
+
+```{r}
+library(pmartRmems)
+data("rRNA_obj")
+data("rRNA_obj2")
+dat <- rRNA_obj
+dat2 <- rRNA_obj2
+```
+
+# First Dataset (Mice Data)
+
+For this analysis, we will run the transformations on the full dataset but only plot a few instances. 
+```{r}
+samp_data <- dat$e_data[,2:7]
+otu_data <- dat$e_data[1:6,-1]
+```
+
+## Raw Data 
+
+### Read Counts of First 6 Samples
+```{r}
+par(mfrow=c(2,3))
+x <- apply(samp_data, 2, hist)
+```
+
+### Read Counts of First 6 OTUs
+```{r}
+par(mfrow=c(2,3))
+x <- apply(otu_data, 1, hist)
+```
+
+```{r, include = FALSE}
+x <- apply(samp_data, 2, function(x) hist(log2(x + 0.5)))
+x <- apply(otu_data, 1, function(x) hist(log2(x + 0.5)))
+
+```
+
+
+## CLR Method With Monte Carlo simulation 
+
+```{r}
+dirdata <- apply(dat$e_data[,-1], 2, function(x) log2(gtools::rdirichlet(1, x + 0.5)))
+temp <- apply(dirdata, 2, function(x){x - mean(x, na.rm = TRUE)})
+```
+
+### Transformed Read Counts of First 6 Samples
+```{r}
+par(mfrow=c(2,3))
+x <- apply(temp[,1:6], 2, histfun)
+```
+
+### Transformed Read Counts of First 6 OTUs
+```{r}
+par(mfrow=c(2,3))
+x <- apply(temp[1:6,], 1, hist)
+```
+
+
+## CLR Method Without Monte Carlo simulation (our way) 
+
+```{r}
+transdata <- transform_data(dat)
+```
+
+### Transformed Read Counts of First 6 Samples
+```{r}
+samp_data <- transdata$e_data[,2:7]
+par(mfrow=c(2,3))
+x <- apply(samp_data, 2, hist)
+```
+
+### Transformed Read Counts of First 6 OTUs
+```{r}
+otu_data <- transdata$e_data[1:6,-1]
+par(mfrow=c(2,3))
+x <- apply(otu_data, 1, hist)
+```
+
+
+## Varying the shift in the data before log transformation
+
+In the analysis above, a constant of 0.5 was added for the log transformation. Here we will vary this "shift" parameter to determine its effects. 
+
+```{r}
+shift <- c(1e-10, 1e-4, 0.1, 0.5, 1, 2, 5, 10, 100)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
