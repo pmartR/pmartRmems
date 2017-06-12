@@ -1,19 +1,27 @@
 
 library(shiny)
 library(pmartRmems)
+library(ALDEx2)
+library(dplyr)
+
 data("rRNA_obj")
 data("rRNA_obj2")
+data("selex")
 mice <- rRNA_obj
-dirt <- rRNA_obj2
-
+soil <- rRNA_obj2
+# get selex in pmartR format
+temp <- selex %>% mutate(OTU=row.names(selex)) %>% select(OTU, 1:3, 8:10, everything())
+selex <- list()
+selex$e_data <- temp
 ###############################################################################
 
 ui <- fluidPage(
   sidebarLayout(
     sidebarPanel(
-      selectInput("choose_data", "Select Data", choices = c("mice", "dirt")),
+      selectInput("choose_data", "Select Data", choices = c("mice", "soil", "selex")),
       selectInput("choose_var", "Visualize by:", choices = c("Sample", "OTU")),
-      sliderInput("shift", "Shift", min=0.01, max=2, value=0.5, step=0.01),
+      sliderInput("shift", "Shift", min=0.05, max=2, value=0.5, step=0.05,
+                  animate = animationOptions(interval = 400)),
       checkboxInput("missing", "Include Missing Data in Plots", value = TRUE)
     ),
     mainPanel(
@@ -30,11 +38,9 @@ ui <- fluidPage(
 server <- function(input, output) {
 
   getdata <- reactive({
-    if(input$choose_data == "mice") {
-      ret <- mice
-    } else {
-      ret <- dirt
-    }
+
+    datname <- input$choose_data
+    ret <- get(datname)
 
     return(ret)
   })
@@ -59,9 +65,9 @@ server <- function(input, output) {
     par(mfrow=c(2,3))
     i <- ifelse(input$choose_var == "Sample", 2, 1)
     if(input$missing) {
-      x <- apply(mydata, i, hist)
+      x <- apply(mydata, i, function(x) hist(x, col = "blue"))
     } else {
-      x <- apply(mydata, i, function(x) hist(x[x>0]))
+      x <- apply(mydata, i, function(x) hist(x[x>0], col = "blue"))
     }
   })
 
@@ -70,7 +76,6 @@ server <- function(input, output) {
     mydata <- getdata()
 
     tempdata <- mydata$e_data[,-1]
-    # ind_notzero <- lapply(tempdata, function(x) which(x!=0))
     ind_notzero <- tempdata != 0
     dirdata <- apply(tempdata, 2, function(x) log2(gtools::rdirichlet(1, x + input$shift)))
     temp <- apply(dirdata, 2, function(x){x - mean(x, na.rm = TRUE)})
@@ -82,34 +87,23 @@ server <- function(input, output) {
 
       par(mfrow=c(2,3))
       if(input$missing) {
-        x <- apply(ret, i, hist)
+        x <- apply(ret, i, function(x) hist(x, col = "blue"))
       } else {
-        x <- sapply(1:6, function(i) {hist(ret[ind_notzero[,i],i])})
+        x <- sapply(1:6, function(i) {hist(ret[ind_notzero[,i],i], col = "blue")})
       }
 
     } else {
       ret <- temp[1:6,]
       i <- 1
-      # ind_notzero <- lapply(ind_notzero, function(x) x[x<=6])
       ind_notzero <- ind_notzero[1:6,]
 
       par(mfrow=c(2,3))
       if(input$missing) {
-        x <- apply(ret, i, hist)
+        x <- apply(ret, i, function(x) hist(x, col = "blue"))
       } else {
-        # print(sapply(1:length(ind_notzero), function(i) {ret[ind_notzero[[i]],i]}))
-        # print(length(ind_notzero))
-        x <- sapply(1:6, function(i) {hist(ret[i,ind_notzero[i,]])})
+        x <- sapply(1:6, function(i) {hist(ret[i,ind_notzero[i,]], col = "blue")})
       }
     }
-
-    # par(mfrow=c(2,3))
-    # if(input$missing) {
-    #   x <- apply(ret, i, hist)
-    # } else {
-    #
-    #   x <- sapply(1:length(ind_notzero), function(i) {hist(ret[ind_notzero[[i]],i])})
-    # }
   })
 
 
@@ -129,9 +123,9 @@ server <- function(input, output) {
 
     par(mfrow=c(2,3))
     if(input$missing) {
-      x <- apply(ret, i, hist)
+      x <- apply(ret, i, function(x) hist(x, col = "blue"))
     } else {
-      x <- apply(ret, i, function(x) hist(x[x>min(x)]))
+      x <- apply(ret, i, function(x) hist(x[x>min(x)], col = "blue"))
     }
   })
 
