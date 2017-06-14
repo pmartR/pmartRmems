@@ -8,53 +8,68 @@
 #' @export
 #'
 #' @examples
-transform_data <- function(rRNA_obj, method = "clr", shift = 0.5) {
+transform_data <- function(rRNA_obj, method = "clr", shift = 0.5, basis_ind = NULL,
+                           sampleMC = FALSE, MCdistn = "dirichlet", niter = 200) {
 
   if (class(rRNA_obj) != "rRNAdata")
     stop("rRNA_obj must be of class 'rRNAdata.' Use ?as.rRNAdata for more info.")
 
-  dat <- rRNA_obj$e_data
+  ret <- rRNA_obj
+  transdata <- ret$e_data
+
+  # # Here a separate function will be called to get the shifted data
+  # transdata <- get_shift_fun(ret$e_data, shift)
+
+  # for now we'll do this...
+  edata_cname <- attributes(rRNA_obj)$cnames$edata_cname
+  ind <- which(colnames(transdata) == edata_cname)
+  transdata[,-ind] <- log2(transdata[,-ind] + shift)
+
+  # # If user supplies a distribution, a function will be called to do the sampling
+  # if (sampleMC) {
+  #   transdata <- get_MC_samples_fun(transdata, MCdistn, niter)
+  # }
 
   # CLR transformation
-  if(method == "clr") {
-    # get ID variable
-    edata_cname <- attributes(rRNA_obj)$cnames$edata_cname
-    ind <- which(colnames(dat) == edata_cname)
-
-    # log transform all but ID
-    ## shift data to get rid of zeros
-    num_data <- dat[,-ind] + shift
-    log2dat <- log2(num_data)
-
-    # centered log ratio
-    temp <- apply(log2dat, 2, function(x){x - mean(x, na.rm = TRUE)})
-
-    # reattach and name ID column
-    transdata <- as.data.frame(cbind(dat[,ind], temp), stringsAsFactors = FALSE)
-    colnames(transdata)[1] <- edata_cname
-
-    # make sure vectors are numeric
-    transdata[,-1] <- apply(transdata[,-1], 2, as.numeric)
-
-    # return to original order of samples in untransformed data frame
-    transdata <- dplyr::select(transdata, dplyr::one_of(colnames(dat)))
+  if (tolower(method) == "clr") {
+    transdata[,-ind] <- apply(transdata[,-ind], 2, function(x){x - mean(x)})
   }
 
 
   # ALR transformation
-  if(method == "alr") {
-    transdata <- dat
-    for(i in 2:ncol(dat)) {
-      vec <- dat[,i]
-      # get last nonzero entry for a basis
-      denom <- rev(which(vec > 0, arr.ind = TRUE))[1]
-      # transform data
-      transdata[,i] <- log2(vec/denom)
-    }
+  if (tolower(method) == "alr") {
+    # use an OTU as a basis to scale the others
+    denom <- ifelse(is.null(basis_ind), nrow(transdata), basis_ind)
+    transdata[,-ind] <- apply(transdata[,-ind], 2, function(x){x - x[denom]})
+
+    # OTU used for basis is taken out
+    transdata <- transdata[-denom,]
   }
 
-  rRNA_obj$e_data <- transdata
-  ret <- rRNA_obj
+
+  # IQLR transformation
+  if (tolower(method) == "iqlr") {
+    # first run CLR
+    tempdata <- apply(transdata[,-ind], 2, function(x){x - mean(x)})
+
+    # calculate variance of OTUs
+    otu_var <- apply(tempdata, 1, var)
+
+    # get IQR
+    q <- quantile(otu_var, c(0.25, 0.75), names = FALSE)
+
+    # get indices for the data with which to calculate the geometric mean
+    geom_ind <- which(otu_var >= q[1] & otu_var <= q[2])
+
+    # get means
+    new_means <- colMeans(transdata[geom_ind, -ind])
+
+    # scale data
+    transdata[,-ind] <- transdata[,-ind] - matrix(new_means, nrow = nrow(transdata[,-1]),
+                                              ncol = length(new_means), byrow = TRUE)
+  }
+
+  ret$e_data <- transdata
 
   # add attribute
   attributes(ret)$data_info$transformation_method <- method
