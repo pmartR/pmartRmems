@@ -4,6 +4,7 @@ library(pmartRmems)
 library(ALDEx2)
 library(dplyr)
 library(tidyr)
+library(ggplot2)
 
 data("rRNA_obj")
 data("rRNA_obj2")
