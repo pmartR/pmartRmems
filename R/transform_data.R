@@ -12,7 +12,20 @@ transform_data <- function(rRNA_obj, method = "clr", shift = 0.5, basis_ind = NU
                            sampleMC = FALSE, MCdistn = "dirichlet", niter = 200) {
 
   if (class(rRNA_obj) != "rRNAdata")
-    stop("rRNA_obj must be of class 'rRNAdata.' Use ?as.rRNAdata for more info.")
+    stop("rRNA_obj must be of class 'rRNAdata.' See ?as.rRNAdata for more info.")
+  if(is.null(method))
+    stop("method must be one of clr, alr, or iqlr")
+  if (!(tolower(method) %in% c("clr", "alr", "iqlr")))
+    stop("method must be one of clr, alr, or iqlr")
+  if (!(class(shift) %in% c("numeric", "integer")))
+    stop("shift must be a number")
+  if (!is.null(basis_ind)) {
+    if (!(class(basis_ind) %in% c("numeric", "integer")))
+      stop("basis_ind must be a positive integer no greater than the number of rows in e_data")
+    if(basis_ind < 1 | basis_ind > nrow(rRNA_obj$e_data) | basis_ind %% 1 != 0)
+      stop("basis_ind must be a positive integer no greater than the number of rows in e_data")
+  }
+
 
   ret <- rRNA_obj
   transdata <- ret$e_data
@@ -29,6 +42,9 @@ transform_data <- function(rRNA_obj, method = "clr", shift = 0.5, basis_ind = NU
   # if (sampleMC) {
   #   transdata <- get_MC_samples_fun(transdata, MCdistn, niter)
   # }
+  # # probably do the log transformation at this point once the other functions are in
+  # transdata[,-ind] <- log2(transdata[,-ind])
+
 
   # CLR transformation
   if (tolower(method) == "clr") {
