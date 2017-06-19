@@ -5,96 +5,127 @@ output:
     toc: yes
 ---
 
-```{r}
+```{r, message = FALSE}
 library(pmartRmems)
+library(ggplot2)
+library(tidyverse)
+```
+
+
+```{r}
 data("rRNA_obj")
+mice <- rRNA_obj
+```
+
+
+# Mice Data
+
+We'll run the transformations for all the methods and then compare their distributions at the bottom. The dafult "shift" value of 0.5 is used.
+
+### CLR method
+
+```{r}
+mice_clr <- transform_data(mice, method = "clr")
+```
+
+By default a message is printed showing the indices of all rows of zeros that were removed. Optional arguments include <code>quiet = TRUE</code> to supress this message, or <code>include_zero_rows = TRUE</code> to refrain from removing rows with all zeros. 
+
+### ALR Method
+
+The function returns an error if the ALR method is used but a basis OTU isn't chosen.
+
+```{r, error = TRUE}
+mice_alr <- transform_data(mice, method = "alr", quiet = TRUE)
+mice_alr <- transform_data(mice, method = "alr", basis_ind = 1, quiet = TRUE)
+```
+
+### IQLR Method
+
+```{r}
+mice_iqlr <- transform_data(mice, method = "iqlr", quiet = TRUE)
+```
+
+### Zero Method
+
+```{r, error = TRUE}
+mice_zero <- transform_data(mice, method = "zero", quiet = TRUE)
+names(mice$f_data)
+mice2 <- group_designation(mice, "Treatment")
+mice_zero <- transform_data(mice2, method = "zero", quiet = TRUE)
+```
+
+### User Method
+
+As with the ALR method, the user must give one or more indices for basis OTUs.
+
+```{r, error = TRUE}
+mice_user <- transform_data(mice, method = "user", quiet = TRUE)
+mice_user <- transform_data(mice, method = "user", basis_ind = 1:10, quiet = TRUE)
+```
+
+
+## Method Comparison
+
+Here the raw data is compared with the five transformation methods. Odd patterns are manifest in the ALR and User methods likely due to random OTUs being chosen for a basis rather than choosing them based on properties of the data.
+
+```{r, echo = FALSE}
+gather_rrna <- function(rRNA_obj, method) {
+  dat <- rRNA_obj$e_data
+  dat2 <- dat %>% gather("Sample", "Reads", 2:ncol(dat)) %>% mutate(Method = method)
+  # p <- ggplot(dat2) + geom_boxplot(aes(Sample, Reads), fill = "blue")
+  return(dat2)
+}
+```
+
+```{r, echo = FALSE}
+datlist <- list(raw = mice, clr = mice_clr, iqlr = mice_iqlr, 
+                alr = mice_alr, user = mice_user, zero = mice_zero)
+plotdat <- list(df = NULL)
+for (i in 1:6) {
+  newdat <- gather_rrna(datlist[[i]], names(datlist)[i])
+  plotdat$df <- rbind(plotdat$df, newdat)
+}
+
+plotdat$df$Facet = factor(plotdat$df$Method, levels = unique(plotdat$df$Method))
+```
+
+```{r, fig.width = 12, fig.height = 8, echo = FALSE}
+ggplot(plotdat$df) + geom_boxplot(aes(Sample, Reads), fill = "blue") +
+  facet_wrap(~ Facet, scales = "free_y") + theme_grey(base_size = 18) + theme(axis.text.x=element_blank())
+```
+
+
+# Soil Data
+
+```{r}
 data("rRNA_obj2")
-dat <- rRNA_obj
-dat2 <- rRNA_obj2
+soil <- rRNA_obj2
+
+soil_clr <- transform_data(soil, method = "clr")
+soil_iqlr <- transform_data(soil, method = "iqlr")
+soil_alr <- transform_data(soil, method = "alr", basis_ind = 1)
+soil_user <- transform_data(soil, method = "user", basis_ind = 1:10)
+names(soil$f_data)
+soil2 <- group_designation(soil, "Treatment")
+soil_zero <- transform_data(soil2, method = "zero")
 ```
 
-# First Dataset (Mice Data)
+```{r, echo = FALSE}
+datlist <- list(raw = soil, clr = soil_clr, iqlr = soil_iqlr, 
+                alr = soil_alr, user = soil_user, zero = soil_zero)
+plotdat <- list(df = NULL)
+for (i in 1:6) {
+  newdat <- gather_rrna(datlist[[i]], names(datlist)[i])
+  plotdat$df <- rbind(plotdat$df, newdat)
+}
 
-For this analysis, we will run the transformations on the full dataset but only plot a few instances. 
-```{r}
-samp_data <- dat$e_data[,2:7]
-otu_data <- dat$e_data[1:6,-1]
+plotdat$df$Facet = factor(plotdat$df$Method, levels = unique(plotdat$df$Method))
 ```
 
-## Raw Data 
-
-### Read Counts of First 6 Samples
-```{r}
-par(mfrow=c(2,3))
-x <- apply(samp_data, 2, hist)
+```{r, fig.width = 12, fig.height = 8, echo = FALSE}
+ggplot(plotdat$df) + geom_boxplot(aes(Sample, Reads), fill = "blue") +
+  facet_wrap(~ Facet, scales = "free_y") + theme_grey(base_size = 18) + theme(axis.text.x=element_blank())
 ```
-
-### Read Counts of First 6 OTUs
-```{r}
-par(mfrow=c(2,3))
-x <- apply(otu_data, 1, hist)
-```
-
-```{r, include = FALSE}
-x <- apply(samp_data, 2, function(x) hist(log2(x + 0.5)))
-x <- apply(otu_data, 1, function(x) hist(log2(x + 0.5)))
-
-```
-
-
-## CLR Method With Monte Carlo simulation 
-
-```{r}
-dirdata <- apply(dat$e_data[,-1], 2, function(x) log2(gtools::rdirichlet(1, x + 0.5)))
-temp <- apply(dirdata, 2, function(x){x - mean(x, na.rm = TRUE)})
-```
-
-### Transformed Read Counts of First 6 Samples
-```{r}
-par(mfrow=c(2,3))
-x <- apply(temp[,1:6], 2, histfun)
-```
-
-### Transformed Read Counts of First 6 OTUs
-```{r}
-par(mfrow=c(2,3))
-x <- apply(temp[1:6,], 1, hist)
-```
-
-
-## CLR Method Without Monte Carlo simulation (our way) 
-
-```{r}
-transdata <- transform_data(dat)
-```
-
-### Transformed Read Counts of First 6 Samples
-```{r}
-samp_data <- transdata$e_data[,2:7]
-par(mfrow=c(2,3))
-x <- apply(samp_data, 2, hist)
-```
-
-### Transformed Read Counts of First 6 OTUs
-```{r}
-otu_data <- transdata$e_data[1:6,-1]
-par(mfrow=c(2,3))
-x <- apply(otu_data, 1, hist)
-```
-
-
-## Varying the shift in the data before log transformation
-
-In the analysis above, a constant of 0.5 was added for the log transformation. Here we will vary this "shift" parameter to determine its effects. 
-
-```{r}
-shift <- c(1e-10, 1e-4, 0.1, 0.5, 1, 2, 5, 10, 100)
-```
-
-
-
-
-
 
 
 
