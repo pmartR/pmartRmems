@@ -15,7 +15,7 @@ transform_data <- function(rRNA_obj, method = "clr", shift = 0.5, basis_ind = NU
 
 .transform_data <- function(rRNA_obj, method = "clr", shift = 0.5, basis_ind = NULL,
                             sampleMC = FALSE, MCdistn = "dirichlet", niter = 200,
-                            include_zero_rows = FALSE, quiet = FALSE) {
+                            include_zero_rows = FALSE, quiet = FALSE, track_seed = FALSE) {
 
   if (class(rRNA_obj) != "rRNAdata")
     stop("rRNA_obj must be of class 'rRNAdata.' See ?as.rRNAdata for more info.")
@@ -57,10 +57,8 @@ transform_data <- function(rRNA_obj, method = "clr", shift = 0.5, basis_ind = NU
   # # If user supplies a distribution a function will be called to do the sampling,
   # # something like this...
   # if (sampleMC) {
-  #   transdata <- get_MC_samples_fun(transdata, MCdistn, niter)
+  #   transdata <- get_MC_samples_fun(transdata, MCdistn, niter, track_seed)
   # }
-  # # probably do the log transformation at this point once the other functions are in
-  # transdata[,-cind] <- log2(transdata[,-cind])
 
   # log transform
   transdata[,-cind] <- log2(transdata[,-cind])

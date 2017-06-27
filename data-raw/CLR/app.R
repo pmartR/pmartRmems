@@ -24,6 +24,36 @@ selex <- list()
 selex$e_data <- temp
 
 theme_set(theme_grey(base_size = 18))
+
+# breaks
+base_breaks <- function(n = 2){
+  function(x) {
+    r <- range(x)
+    if (r[1] <= 0) {r[1] <- 1}
+    return(axisTicks(r, log = TRUE, nint = n))
+  }
+}
+
+# plotting function
+plotfun <- function(dat, ID, raw = TRUE) {
+  # facet labels
+  ## Missing
+  dat$Missing <- factor(dat$Missing, labels = c("NonMissing", "Missing"))
+  ## sample size
+  newdat <- dat %>% group_by_(ID, "Missing") %>% summarise(n=n()) %>%
+    mutate(nshow = paste("n =", n))
+
+  p <- ggplot(dat) + geom_density(aes(Reads, fill = Missing), alpha = 0.7) +
+    facet_grid(formula(paste("Missing ~", ID)), scales = "free_y") +
+    scale_fill_discrete(guide = FALSE) +
+    labs(x = "Transformed Reads") +
+    geom_text(data = newdat, aes(x=Inf, y=Inf, hjust = 1, vjust = 1, label = nshow), size = 5)
+  if (raw) {
+    p <- p + scale_x_continuous(trans = "log1p", breaks = base_breaks()) +
+    labs(x = "log(Reads + 1)")
+  }
+  return(p)
+}
 ###############################################################################
 
 ui <- fluidPage(
@@ -63,10 +93,8 @@ server <- function(input, output, session) {
 
   # retrieve dataset
   getdata <- reactive({
-
     datname <- input$choose_data
     ret <- get(datname)
-
     return(ret)
   })
 
@@ -80,16 +108,14 @@ server <- function(input, output, session) {
       dat <- tempdata[,1:7] %>%
         gather("Sample", "Reads", 2:7) %>%
         mutate(Missing = (Reads == 0))
-      p <- ggplot(dat) + geom_histogram(aes(Reads, fill = Missing)) +
-        facet_wrap(~ Sample, ncol = 3) + scale_fill_discrete(labels = c("No", "Yes"))
+      p <- plotfun(dat, "Sample")
 
     } else {
       dat <- tempdata[1:6,] %>%
         gather("Sample", "Reads", 2:ncol(tempdata)) %>%
         mutate(Missing = (Reads == 0)) %>%
         select(OTU = 1, everything())
-      p <- ggplot(dat) + geom_histogram(aes(Reads, fill = Missing)) +
-        facet_wrap(~ OTU, ncol = 3) + scale_fill_discrete(labels = c("No", "Yes"))
+      p <- plotfun(dat, "OTU")
     }
 
     return(p)
@@ -114,8 +140,7 @@ server <- function(input, output, session) {
         gather("key", "Missing", 2:7) %>%
         select(Missing) %>%
         cbind(dat, .)
-      p <- ggplot(dat) + geom_histogram(aes(Reads, fill = Missing)) +
-        facet_wrap(~ Sample, ncol = 3) + scale_fill_discrete(labels = c("No", "Yes"))
+      p <- plotfun(dat, "Sample", FALSE)
 
     } else {
       dat <- tempdata[1:6,] %>%
@@ -126,8 +151,7 @@ server <- function(input, output, session) {
         select(Missing) %>%
         cbind(dat, .) %>%
         select(OTU = 1, everything())
-      p <- ggplot(dat) + geom_histogram(aes(Reads, fill = Missing)) +
-        facet_wrap(~ OTU, ncol = 3) + scale_fill_discrete(labels = c("No", "Yes"))
+      p <- plotfun(dat, "OTU", FALSE)
     }
 
     return(p)
@@ -151,8 +175,7 @@ server <- function(input, output, session) {
         gather("key", "Missing", 2:7) %>%
         select(Missing) %>%
         cbind(dat, .)
-      p <- ggplot(dat) + geom_histogram(aes(Reads, fill = Missing)) +
-        facet_wrap(~ Sample, ncol = 3) + scale_fill_discrete(labels = c("No", "Yes"))
+      p <- plotfun(dat, "Sample", FALSE)
 
     } else {
       dat <- tempdata[1:6,] %>%
@@ -163,8 +186,7 @@ server <- function(input, output, session) {
         select(Missing) %>%
         cbind(dat, .) %>%
         select(OTU = 1, everything())
-      p <- ggplot(dat) + geom_histogram(aes(Reads, fill = Missing)) +
-        facet_wrap(~ OTU, ncol = 3) + scale_fill_discrete(labels = c("No", "Yes"))
+      p <- plotfun(dat, "OTU", FALSE)
     }
 
     return(p)
