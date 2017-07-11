@@ -74,18 +74,23 @@ group_designation <- function(omicsData, main_effects, covariates=NULL, time_cou
   # Get number of main effects #
   n.maineffects = length(main_effects)
 
-  # Case 1: 1 main effect variable #
+  # Case 1: one main effect variable #
   if(n.maineffects==1){
     # return groups as levels of the main effect variable #
     Group = temp_data[,names(temp_data) %in% main_effects]
 
   # create output formatted with first column being sample id and second column group id #
-    output = data.frame(Sample.ID = temp_data[,samp_id], Group = as.character(Group))
+    ### It is advantageous for filtering and plotting purposes to have a variable with the
+    ### original main effect name, as in Case 2 below. Thus here I add a seemingly redundant
+    ### column to the group_DF with the main effect name, keeping Case 1 and Case 2 similar
+    ### and making filtering and plotting by group easier(7/7/2017 by Thomas)
+    output = data.frame(Sample.ID = temp_data[,samp_id], Group = as.character(Group),
+                        Treatment = as.character(Group))
     names(output)[1] = samp_id
-
+    names(output)[3] <- main_effects
   }
 
-  # Case 2: 2 main effect variables #
+  # Case 2: two main effect variables #
   if(n.maineffects==2){
 
     # get main effect variables #
@@ -205,6 +210,9 @@ group_designation <- function(omicsData, main_effects, covariates=NULL, time_cou
   }
   attr(omicsData, "data_info")$num_emeta = num_emeta
   ## end of update attributes (7/7/2016 by KS)
+
+  # make main effects an attribute, will be useful for filtering
+  attr(omicsData, "main_effects") <- main_effects
 
   return(omicsData)
 }
