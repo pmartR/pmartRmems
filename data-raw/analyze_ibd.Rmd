@@ -1,0 +1,96 @@
+---
+title: "IBD data"
+author: "Thomas Johansen"
+date: "July 18, 2017"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r message = FALSE}
+library(pmartRmems)
+library(dplyr)
+library(ggplot2)
+data("ibd")
+```
+
+```{r}
+ibd2 <- group_designation(ibd, "diagnosis_full")
+oldgdf <- attributes(ibd2)$group_DF
+gdf <- oldgdf %>% filter(Group %in% c("CD","UC"))
+samps <- as.character(gdf$sample_name)
+attributes(ibd2)$group_DF <- gdf
+ibd2$e_data <- ibd$e_data %>% select(OTU, one_of(samps))
+```
+
+```{r}
+ttest_rrna <- function(edata, paired = FALSE, groups = NULL) {
+
+  # split data into groups
+  ncols <- ncol(edata)
+  nrows <- nrow(edata)
+# browser()
+  if (is.null(groups)) {
+    df1 <- edata[,1:floor(ncols/2)]
+    df2 <- edata[,floor(ncols/2):ncols]
+  } else {
+    df1 <- edata[,groups[[1]]]
+    df2 <- edata[,groups[[2]]]
+  }
+
+  # run tests, return p-values
+  if (!paired) {
+    return(sapply(1:nrows, function(i) t.test(df2[i,], df1[i,])$p.value))
+  } else {
+    if (ncol(df1) != ncol(df2)) stop("Not paired data")
+    return(sapply(1:nrows, function(i) t.test(df2[i,] - df1[i,])$p.value))
+  }
+}
+
+transform_raw_data_clr <- function(rawdata, shift = 0.5) {
+
+  # log transform and shift data
+  logdata <- log2(rawdata + shift)
+
+  # denominator
+  transdata <- apply(logdata, 2, function(x){x - mean(x)})
+
+  return(transdata)
+}
+```
+
+```{r}
+# filter out missing by group
+filt <- nonmissing_filter(ibd2)
+ibd3 <- applyFilt(filt, ibd2)
+groups <- list(which(gdf$Group == "CD"), which(gdf$Group == "UC"))
+edata <- transform_raw_data_clr(ibd3$e_data[,-1])
+pvals <- ttest_rrna(edata, paired = FALSE, groups = groups)
+```
+
+```{r}
+nmpg <- nonmissing_per_group(ibd3)
+tot <- nmpg$nonmiss_totals
+pdat <- as.data.frame(cbind(tot, pval=pvals))
+```
+
+```{r}
+ggplot(pdat) + geom_point(aes(CD, UC, col = pval), alpha = 0.3) + viridis::scale_color_viridis()
+pdat %>% filter(pval < 0.05) %>% ggplot() + geom_point(aes(CD, UC, col = pval), alpha = 0.3) + 
+  viridis::scale_color_viridis()
+```
+
+### ALDEx
+```{r ALDEx2 p-values, echo = FALSE, message = FALSE, warning = FALSE}
+dat <- ibd3$e_data[,-1]
+gdf <- attr(ibd3, "group_DF")
+conds <- gdf$Group
+mc <- 128
+x <- ALDEx2::aldex.clr(dat, conds, mc.samples = mc, denom = "all")
+source('C:/Users/joha328/Documents/ALDEx2/R/clr_ttest.r')
+source('C:/Users/joha328/Documents/ALDEx2/R/progress.R')
+source('C:/Users/joha328/Documents/ALDEx2/R/stats.fast.R')
+xt <- aldex.ttest(x, conds, paired.test = FALSE)
+# xt <- readRDS("C:/Users/joha328/Documents/ALDEx2/inst/xt.rds")
+pvals <- xt[,1]
+```

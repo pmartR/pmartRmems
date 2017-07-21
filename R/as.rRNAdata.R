@@ -148,12 +148,12 @@ as.rRNAdata <- function(e_data, f_data, e_meta=NULL, edata_cname, fdata_cname, e
 
   # check that all samples in e_data are present in f_data #
   edat_sampid = which(names(e_data) == edata_cname)
-  samps.miss = sum(!(names(e_data[,-edat_sampid]) %in% f_data[,fdata_cname]))
+  samps.miss = sum(!(names(e_data[,-edat_sampid]) %in% f_data[[fdata_cname]]))
   if( samps.miss > 0) stop(paste( samps.miss, " samples from e_data not found in f_data", sep = ""))
 
   # check for any extra samples in f_data than in e_data - necessary to remove before group_designation function #
-  if(any(!(f_data[,fdata_cname] %in% names(e_data)))){
-    f_data <- f_data[-which(!(f_data[,fdata_cname] %in% names(e_data))),]
+  if(any(!(f_data[[fdata_cname]] %in% names(e_data)))){
+    f_data <- f_data[-which(!(f_data[[fdata_cname]] %in% names(e_data))),]
   }
 
   # check that f_data has at least 2 columns #
@@ -161,13 +161,13 @@ as.rRNAdata <- function(e_data, f_data, e_meta=NULL, edata_cname, fdata_cname, e
 
   # if e_meta is provided, check that all OTUs in e_data occur in e_meta #
   if(!is.null(e_meta)){
-    if(sum(!(e_data[,edata_cname] %in% e_meta[,edata_cname])) > 0 ) stop("Not all OTUs in e_data are present in e_meta")
+    if(sum(!(e_data[[edata_cname]] %in% e_meta[[edata_cname]])) > 0 ) stop("Not all OTUs in e_data are present in e_meta")
   }
 
   # if e_meta is provided, remove any extra features that were provided #
   if(!is.null(e_meta)){
-    if(any(!(e_meta[,edata_cname] %in% e_data[,edata_cname]))){
-      e_meta <- e_meta[-which(!(e_meta[,edata_cname] %in% e_data[,edata_cname])),]
+    if(any(!(e_meta[[edata_cname]] %in% e_data[[edata_cname]]))){
+      e_meta <- e_meta[-which(!(e_meta[[edata_cname]] %in% e_data[[edata_cname]])),]
     }
   }
 

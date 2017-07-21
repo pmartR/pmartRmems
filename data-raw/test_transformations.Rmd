@@ -1,0 +1,209 @@
+---
+title: "Testing Transformation Methods"
+output: 
+  html_document: 
+    toc: yes
+---
+
+```{r, message = FALSE}
+library(pmartRmems)
+library(ggplot2)
+library(tidyverse)
+library(ALDEx2)
+```
+
+
+```{r}
+data("rRNA_obj")
+mice <- rRNA_obj
+```
+
+
+# Mice Data
+
+We'll run the transformations for all the methods and then compare their distributions at the bottom. The dafult "shift" value of 0.5 is used.
+
+### CLR method
+
+```{r}
+mice_clr <- transform_data(mice, method = "clr")
+```
+
+By default a message is printed showing the indices of all rows of zeros that were removed. Optional arguments include <code>quiet = TRUE</code> to supress this message, or <code>include_zero_rows = TRUE</code> to refrain from removing rows with all zeros. 
+
+### ALR Method
+
+The function returns an error if the ALR method is used but a basis OTU isn't chosen.
+
+```{r, error = TRUE}
+mice_alr <- transform_data(mice, method = "alr", quiet = TRUE)
+mice_alr <- transform_data(mice, method = "alr", basis_ind = 1, quiet = TRUE)
+```
+
+### IQLR Method
+
+```{r}
+mice_iqlr <- transform_data(mice, method = "iqlr", quiet = TRUE)
+```
+
+### Zero Method
+
+```{r, error = TRUE}
+mice_zero <- transform_data(mice, method = "zero", quiet = TRUE)
+names(mice$f_data)
+mice2 <- group_designation(mice, "Treatment")
+mice_zero <- transform_data(mice2, method = "zero", quiet = TRUE)
+```
+
+### User Method
+
+As with the ALR method, the user must give one or more indices for basis OTUs.
+
+```{r, error = TRUE}
+mice_user <- transform_data(mice, method = "user", quiet = TRUE)
+mice_user <- transform_data(mice, method = "user", basis_ind = 1:10, quiet = TRUE)
+```
+
+
+## Method Comparison
+
+Here the raw data is compared with the five transformation methods. Odd patterns are manifest in the ALR and User methods likely due to random OTUs being chosen for a basis rather than choosing them based on properties of the data.
+
+```{r, echo = FALSE}
+gather_rrna <- function(rRNA_obj, method) {
+  rRNA_obj$e_data %>% gather("Sample", "Reads", 2:ncol(rRNA_obj$e_data)) %>% mutate(Method = method)
+}
+```
+
+```{r, echo = FALSE}
+datlist <- list(raw = mice, clr = mice_clr, iqlr = mice_iqlr, 
+                alr = mice_alr, user = mice_user, zero = mice_zero)
+plotdat <- list(df = NULL)
+for (i in 1:6) {
+  newdat <- gather_rrna(datlist[[i]], names(datlist)[i])
+  plotdat$df <- rbind(plotdat$df, newdat)
+}
+
+plotdat$df$Facet = factor(plotdat$df$Method, levels = unique(plotdat$df$Method))
+```
+
+```{r, fig.width = 12, fig.height = 8, echo = FALSE}
+ggplot(plotdat$df) + geom_boxplot(aes(Sample, Reads), fill = "blue") +
+  facet_wrap(~ Facet, scales = "free_y") + theme_grey(base_size = 18) + theme(axis.text.x=element_blank())
+```
+
+
+## OTUs
+
+```{r, fig.height = 24, fig.width = 12}
+# mice_long <- dat %>% gather("Sample", "Reads", 2:ncol(dat)) %>% rename_(OTU = OTU_ID) %>% 
+#   mutate(Reads = log(Reads + 1), OTU = factor(OTU, levels = unique(dat[,OTU_ID])))
+temp <- subset(plotdat$df, Method != "raw")
+rng <- range(temp$Reads)
+mn <- floor(rng[1])
+mx <- ceiling(rng[2])
+plotfun <- function(method) {
+  sub <- subset(plotdat$df, Method == method)
+  p <- ggplot(sub) + geom_raster(aes(OTU.ID, Sample, fill = Reads)) + 
+    theme(axis.text.x  = element_blank(),
+          axis.text.y  = element_blank()) +
+    ggtitle(method)
+
+  if(method != "raw") {
+    p <- p + scale_fill_gradientn(colours = c("blue","green","red"), 
+                         values = scales::rescale(c(mn, mn/10, 0, mx/10, mx)),
+                         limits=c(mn, mx)) +
+                         labs(x = "OTU")
+  } else {
+    p <- p + scale_fill_gradientn(colours = c("green","blue","red"), 
+                         values = scales::rescale(c(0, 1, 100, 1000, 10000, 
+                                                    100000, max(plotdat$df$Reads)))) +
+                         labs(x = "OTU")
+  }
+  
+  return(p)
+}
+
+plotlist <- lapply(names(datlist), plotfun)
+cowplot::plot_grid(plotlist[[1]], plotlist[[2]], plotlist[[3]], 
+                   plotlist[[4]], plotlist[[5]], plotlist[[6]], ncol = 1)
+```
+
+
+
+
+
+# Soil Data
+
+```{r}
+data("rRNA_obj2")
+soil <- rRNA_obj2
+
+soil_clr <- transform_data(soil, method = "clr")
+soil_iqlr <- transform_data(soil, method = "iqlr")
+soil_alr <- transform_data(soil, method = "alr", basis_ind = 1)
+soil_user <- transform_data(soil, method = "user", basis_ind = 1:10)
+names(soil$f_data)
+soil2 <- group_designation(soil, "Treatment")
+soil_zero <- transform_data(soil2, method = "zero")
+```
+
+```{r, echo = FALSE}
+datlist <- list(raw = soil, clr = soil_clr, iqlr = soil_iqlr, 
+                alr = soil_alr, user = soil_user, zero = soil_zero)
+plotdat <- list(df = NULL)
+for (i in 1:6) {
+  newdat <- gather_rrna(datlist[[i]], names(datlist)[i])
+  plotdat$df <- rbind(plotdat$df, newdat)
+}
+
+plotdat$df$Facet = factor(plotdat$df$Method, levels = unique(plotdat$df$Method))
+```
+
+```{r, fig.width = 12, fig.height = 8, echo = FALSE}
+ggplot(plotdat$df) + geom_boxplot(aes(Sample, Reads), fill = "blue") +
+  facet_wrap(~ Facet, scales = "free_y") + theme_grey(base_size = 18) + theme(axis.text.x=element_blank())
+```
+
+
+# Selex Data
+
+```{r}
+data("selex")
+# convert to rRNAdata object
+e_data <- selex %>% mutate(OTU = row.names(selex)) %>% select(OTU, everything())
+f_data <- data.frame(SampleID = colnames(selex), 
+                     Condition = c(rep("NonSelected", 7), rep("Selected", 7)))
+selex_rrna <- as.rRNAdata(e_data, f_data, edata_cname = "OTU", fdata_cname = "SampleID")
+
+selex_clr <- transform_data(selex_rrna, method = "clr")
+selex_iqlr <- transform_data(selex_rrna, method = "iqlr")
+selex_alr <- transform_data(selex_rrna, method = "alr", basis_ind = 1)
+selex_user <- transform_data(selex_rrna, method = "user", basis_ind = 1:10)
+names(selex_rrna$f_data)
+selex2 <- group_designation(selex_rrna, "Condition")
+selex_zero <- transform_data(selex2, method = "zero")
+```
+
+```{r, echo = FALSE}
+datlist <- list(raw = selex_rrna, clr = selex_clr, iqlr = selex_iqlr, 
+                alr = selex_alr, user = selex_user, zero = selex_zero)
+plotdat <- list(df = NULL)
+for (i in 1:6) {
+  newdat <- gather_rrna(datlist[[i]], names(datlist)[i])
+  plotdat$df <- rbind(plotdat$df, newdat)
+}
+
+plotdat$df$Facet = factor(plotdat$df$Method, levels = unique(plotdat$df$Method))
+```
+
+```{r, fig.width = 12, fig.height = 8, echo = FALSE}
+ggplot(plotdat$df) + geom_boxplot(aes(Sample, Reads), fill = "blue") +
+  facet_wrap(~ Facet, scales = "free_y") + theme_grey(base_size = 18) + theme(axis.text.x=element_blank())
+```
+
+
+
+
+
+
