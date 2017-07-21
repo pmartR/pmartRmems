@@ -21,7 +21,11 @@ transform_data <- function(rRNA_obj, method = "clr", shift = 0.5, basis_ind = NU
     stop("rRNA_obj must be of class 'rRNAdata.' See ?as.rRNAdata for more info.")
   if(is.null(method))
     stop("method must be one of clr, alr, iqlr, zero, or user")
-  if (!(tolower(method) %in% c("clr", "alr", "iqlr", "zero", "user")))
+
+  # ignore case
+  method <- tolower(method)
+
+  if (!(method %in% c("clr", "alr", "iqlr", "zero", "user")))
     stop("method must be one of clr, alr, iqlr, zero, or user")
   if (!(class(shift) %in% c("numeric", "integer")))
     stop("shift must be a number")
@@ -37,15 +41,17 @@ transform_data <- function(rRNA_obj, method = "clr", shift = 0.5, basis_ind = NU
     Not_zero <- transdata[,-cind] != 0
     ind_allzero <- which(rowSums(Not_zero) == 0)
     if (length(ind_allzero > 0)) {
-      if (tolower(method) %in% c("user", "alr")) {
+      if (method %in% c("user", "alr")) {
         if (any(basis_ind %in% ind_allzero))
           stop("At least one of selected OTUs for basis_ind is all zeros")
 
       }
       transdata <- transdata[-ind_allzero, ]
       if(!quiet) {
-        message(paste0("Removing the following rows containing all zeros:\n",
+        message(paste0("Removing the following ", length(ind_allzero), " row(s) containing all zeros:\n",
                       paste(ind_allzero, collapse = ", ")))
+        attributes(ret)$OTUs_removed <-
+          as.character(unlist(ret$e_data[ind_allzero, cind], use.names = FALSE))
       }
     }
   }
@@ -65,12 +71,12 @@ transform_data <- function(rRNA_obj, method = "clr", shift = 0.5, basis_ind = NU
 
 
   # CLR transformation
-  if (tolower(method) == "clr") {
+  if (method == "clr") {
     transdata[,-cind] <- apply(transdata[,-cind], 2, function(x){x - mean(x)})
 
 
   # ALR transformation
-  } else if (tolower(method) == "alr") {
+  } else if (method == "alr") {
 
     # check for errors
     if (is.null(basis_ind))
@@ -86,7 +92,7 @@ transform_data <- function(rRNA_obj, method = "clr", shift = 0.5, basis_ind = NU
 
 
   # IQLR transformation
-  } else if (tolower(method) == "iqlr") {
+  } else if (method == "iqlr") {
     # first run CLR
     tempdata <- apply(transdata[,-cind], 2, function(x){x - mean(x)})
 
@@ -108,7 +114,7 @@ transform_data <- function(rRNA_obj, method = "clr", shift = 0.5, basis_ind = NU
 
 
   # Zero transformation
-  } else if (tolower(method) == "zero") {
+  } else if (method == "zero") {
     if (is.null(attributes(ret)$group_DF))
       stop("No group designated for rRNA_obj. See ?group_designation for details.")
 
@@ -150,7 +156,7 @@ transform_data <- function(rRNA_obj, method = "clr", shift = 0.5, basis_ind = NU
 
 
   # User transformation
-  } else if (tolower(method) == "user") {
+  } else if (method == "user") {
     if (is.null(basis_ind))
       stop("basis_ind cannot be NULL for this method, please supply a vector of indices")
 
@@ -170,5 +176,7 @@ transform_data <- function(rRNA_obj, method = "clr", shift = 0.5, basis_ind = NU
 
   return(ret)
 }
+
+
 
 

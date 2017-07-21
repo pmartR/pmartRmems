@@ -40,10 +40,11 @@ plotfun <- function(dat, ID, raw = TRUE) {
   ## Missing
   dat$Missing <- factor(dat$Missing, labels = c("NonMissing", "Missing"))
   ## sample size
-  newdat <- dat %>% group_by_(ID, "Missing") %>% summarise(n=n()) %>%
+  newdat <- dat %>% group_by_(ID, "Missing") %>% summarise(n=n(), maxzero = max(Reads)) %>%
     mutate(nshow = paste("n =", n))
-
+# browser()
   p <- ggplot(dat) + geom_density(aes(Reads, fill = Missing), alpha = 0.7) +
+    geom_vline(data = newdat, aes(xintercept = maxzero), col = "black") +
     facet_grid(formula(paste("Missing ~", ID)), scales = "free_y") +
     scale_fill_discrete(guide = FALSE) +
     labs(x = "Transformed Reads") +
