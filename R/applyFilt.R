@@ -1,54 +1,54 @@
 #' Title
 #'
 #' @param filter_object
-#' @param rRNA_obj
+#' @param rRNAdata
 #'
 #' @return
 #' @export
 #'
 #' @examples
-applyFilt <- function(filter_object, rRNA_obj, ...) {
+applyFilt <- function(filter_object, rRNAdata, ...) {
   UseMethod("applyFilt")
 }
 
 #' @export
 #' @name applyFilt
 #' @rdname applyFilt
-applyFilt.nonmissFilt <- function(filter_object, rRNA_obj, min_nonmiss = 2) {
+applyFilt.imdFilt <- function(filter_object, rRNAdata, min_nonmiss = 2) {
 
   group_sizes <- attr(filter_object, "group_sizes")
   nonmiss_per_group <- list(nonmiss_totals = filter_object, group_sizes = group_sizes)
 
-  groupDF <- attributes(rRNA_obj)$group_DF
-  e_data <- rRNA_obj$e_data
-  edata_cname <- attr(rRNA_obj, "cnames")$edata_cname
-  samp_cname <- attr(rRNA_obj, "cnames")$fdata_cname
-  emeta_cname <- attributes(rRNA_obj)$cnames$emeta_cname
+  groupDF <- attributes(rRNAdata)$group_DF
+  e_data <- rRNAdata$e_data
+  edata_cname <- attr(rRNAdata, "cnames")$edata_cname
+  samp_cname <- attr(rRNAdata, "cnames")$fdata_cname
+  emeta_cname <- attributes(rRNAdata)$cnames$emeta_cname
 
   filter.edata <- anova_filter(nonmiss_per_group = nonmiss_per_group,
                                min_nonmiss_anova = min_nonmiss, cname_id = edata_cname)
 
-  #checking that filter.edata does not specify all of e_data in rRNA_obj
-  if (all(rRNA_obj$e_data[[edata_cname]] %in% filter.edata)) {
-    stop("filter.edata specifies all of e_data in rRNA_obj")
+  #checking that filter.edata does not specify all of e_data in rRNAdata
+  if (all(rRNAdata$e_data[[edata_cname]] %in% filter.edata)) {
+    stop("filter.edata specifies all of e_data in rRNAdata")
   }
 
   filter_object_new <- list(edata_filt = filter.edata, emeta_filt = NULL, samples_filt = NULL)
 
   # call the function that does the filter application
-  results_pieces <- MSomics_filter_worker(filter_object = filter_object_new, omicsData = rRNA_obj)
+  results_pieces <- MSomics_filter_worker(filter_object = filter_object_new, omicsData = rRNAdata)
 
   # return filtered data object #
-  rRNA_obj$e_data <- results_pieces$temp.pep2
-  rRNA_obj$f_data <- results_pieces$temp.samp2
-  rRNA_obj$e_meta <- results_pieces$temp.meta1
-  results <- rRNA_obj
+  rRNAdata$e_data <- results_pieces$temp.pep2
+  rRNAdata$f_data <- results_pieces$temp.samp2
+  rRNAdata$e_meta <- results_pieces$temp.meta1
+  results <- rRNAdata
 
   # if group attribute is present, re-run group_designation in case filtering any items
   # impacted the group structure
   if (!is.null(attr(results, "group_DF"))){
     results <- group_designation(results,
-                                 main_effects = attr(attr(rRNA_obj, "group_DF"), "main_effects"))
+                                 main_effects = attr(attr(rRNAdata, "group_DF"), "main_effects"))
   } else {
     # Update attributes (7/11/2016 by KS) - this is being done already in group_designation
     attributes(results)$data_info$num_edata <- length(unique(results$e_data[, edata_cname]))
