@@ -6,91 +6,239 @@ output:
   html_document: default
   pdf_document: default
 ---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
 
 ```{r message = FALSE}
 library(pmartRmems)
 library(dplyr)
 library(ggplot2)
+library(lubridate)
 data("ibd")
 ```
+
+# EDA
+### Time Component
+```{r}
+time <- ibd$f_data %>% 
+  select(patientnumber, collection_timestamp, timepoint, diagnosis_full) %>% 
+  mutate(rowID = 1:nrow(.)) %>%
+  select(rowID, everything())
+time$collection_timestamp <- mdy(time$collection_timestamp)
+# timedf <- tidyr::separate(time, collection_timestamp, sep = "/", into = c("month","day","year"))
+timediff <- time %>% group_by(patientnumber) %>% summarise(timespan = (max(collection_timestamp) - min(collection_timestamp))[[1]])
+timedf <- merge(time, timediff, by = "patientnumber") %>% arrange(timespan)
+```
+
+```{r}
+ggplot(timedf) + geom_bar(aes(as.factor(timepoint))) + 
+  labs(x = "Number of Visits", title = "Number of Visits Completed by Each Patient")
+```
+
+
+```{r include = FALSE}
+plotdat <- timedf
+plotdat$newID <- factor(plotdat$patientnumber, levels = unique(plotdat$patientnumber))
+
+ggplot(plotdat) + 
+  geom_line(aes(collection_timestamp, newID, group = newID)) + 
+  geom_point(aes(collection_timestamp, newID, group = newID)) +
+  coord_cartesian(xlim = c(mdy(01012009), mdy(01012012))) + 
+  theme(axis.text.y = element_blank()) +
+  labs(title = "Study Duration by Subject", subtitle = "Ordered by Length of Study")
+```
+
+```{r}
+plotdat <- timedf %>% arrange(collection_timestamp)
+plotdat$newID <- factor(plotdat$patientnumber, levels = unique(plotdat$patientnumber))
+
+ggplot(plotdat) + 
+  geom_line(aes(collection_timestamp, newID, group = newID)) + 
+  geom_point(aes(collection_timestamp, newID, group = newID)) +
+  coord_cartesian(xlim = c(mdy(01012009), mdy(01012012))) + 
+  theme(axis.text.y = element_blank()) +
+  labs(title = "Study Duration by Subject", subtitle = "Ordered by Beginning Date of Study")
+```
+
+```{r}
+# time between points vs number of time points
+newdf <- timedf %>% arrange(patientnumber, collection_timestamp)
+not_uniq <- unlist(lapply(unique(newdf$patientnumber), function(x) {
+  duplicated(newdf$collection_timestamp[newdf$patientnumber == x])
+  }))
+time_uniq <- newdf[!not_uniq,]
+
+timediff_by_patient <- function(timedata, patient) {
+  dat <- timedata %>% filter(patientnumber == patient) %>% arrange(collection_timestamp)
+  ts <- dat$collection_timestamp
+  dat$lag <- as.numeric(ts - dplyr::lag(ts))
+  dat$days_from_start <- as.numeric(ts - min(ts))
+
+  return(dat)
+}
+
+templist <- lapply(unique(time_uniq$patientnumber), timediff_by_patient, timedata = time_uniq)
+lagdata <- do.call(rbind, templist)
+sumdata <- lagdata %>% group_by(patientnumber) %>% summarise(ntimes = n())
+new_timedat <- merge(lagdata, sumdata, by = "patientnumber")
+```
+
+```{r include = FALSE}
+no_na_lag <- new_timedat %>% filter(!is.na(lag))
+ggplot(no_na_lag) + 
+  geom_point(aes(ntimes, lag, col = patientnumber)) + 
+  coord_cartesian(ylim = c(0, 500))
+```
+
+```{r}
+plotdat <- new_timedat %>% arrange(timespan)
+plotdat$newID <- factor(plotdat$patientnumber, levels = unique(plotdat$patientnumber))
+ggplot(plotdat) + 
+  geom_line(aes(days_from_start, newID, group = newID)) + 
+  geom_point(aes(days_from_start, newID, group = newID)) +
+  coord_cartesian(xlim = c(0, 1000)) +
+  theme(axis.text.y = element_blank()) +
+  labs(title = "Study Duration by Subject", subtitle = "Scaled from First Study")
+```
+
+```{r}
+plotdat <- new_timedat %>% arrange(timespan)
+plotdat$newID <- factor(plotdat$patientnumber, levels = unique(plotdat$patientnumber))
+ggplot(plotdat) + 
+  geom_line(aes(days_from_start, newID, group = newID, col = diagnosis_full)) + 
+  geom_point(aes(days_from_start, newID, group = newID, col = diagnosis_full)) +
+  coord_cartesian(xlim = c(0, 1000)) +
+  theme(axis.text.y = element_blank()) +
+  labs(title = "Study Duration by Subject", subtitle = "Colored by Diagnosis")
+```
+
+```{r}
+plotdat <- no_na_lag %>% filter(timepoint < 10) %>% mutate(timepoint = as.factor(timepoint))
+ggplot(plotdat) + geom_density(aes(lag, group = timepoint, fill = timepoint), alpha = 0.5) +
+  coord_cartesian(xlim = c(0, 200)) +
+  labs(title = "Time Between Points", x = "Days")
+```
+
+### Data points per group
+```{r}
+tempdat <- new_timedat %>% 
+  filter(diagnosis_full %in% c("CD", "HC", "UC")) %>% 
+  group_by(patientnumber, diagnosis_full) %>% 
+  summarise(count = n())
+dotdf <- tempdat %>% group_by(count, diagnosis_full) %>% summarise(dotsize = n())
+plotdat <- merge(tempdat, dotdf) %>% mutate(num_datapoints = count * dotsize)
+
+ggplot(plotdat) + 
+  geom_point(aes(diagnosis_full, count, col = diagnosis_full, size = dotsize)) +
+  annotate("text", x = plotdat$diagnosis_full, y = plotdat$count, label = plotdat$num_datapoints) +
+  labs(x = "Diagnosis", y = "Number of Visits", title = "Patient Visits by Diagnosis Type", 
+       subtitle = "Points labeled by the total number of data points available", 
+       size = "Patient\nCount") +
+  guides(col = "none") +
+  scale_y_continuous(breaks = 1:10) + 
+  scale_size(breaks = 2*1:5, range = c(2, 10))
+```
+
+
+### Simulated Data
 
 ```{r}
 ibd2 <- group_designation(ibd, "diagnosis_full")
 oldgdf <- attributes(ibd2)$group_DF
-gdf <- oldgdf %>% filter(Group %in% c("CD","UC"))
+gdf <- oldgdf %>% filter(Group %in% c("CD","HC"))
 samps <- as.character(gdf$sample_name)
 attributes(ibd2)$group_DF <- gdf
 ibd2$e_data <- ibd$e_data %>% select(OTU, one_of(samps))
 ```
 
 ```{r}
-ttest_rrna <- function(edata, paired = FALSE, groups = NULL) {
-
-  # split data into groups
-  ncols <- ncol(edata)
-  nrows <- nrow(edata)
-# browser()
-  if (is.null(groups)) {
-    df1 <- edata[,1:floor(ncols/2)]
-    df2 <- edata[,floor(ncols/2):ncols]
-  } else {
-    df1 <- edata[,groups[[1]]]
-    df2 <- edata[,groups[[2]]]
-  }
-
-  # run tests, return p-values
-  if (!paired) {
-    return(sapply(1:nrows, function(i) t.test(df2[i,], df1[i,])$p.value))
-  } else {
-    if (ncol(df1) != ncol(df2)) stop("Not paired data")
-    return(sapply(1:nrows, function(i) t.test(df2[i,] - df1[i,])$p.value))
-  }
-}
-
-transform_raw_data_clr <- function(rawdata, shift = 0.5) {
-
-  # log transform and shift data
-  logdata <- log2(rawdata + shift)
-
-  # denominator
-  transdata <- apply(logdata, 2, function(x){x - mean(x)})
-
-  return(transdata)
-}
+source('data-raw/sample_library_sizes.R')
 ```
 
 ```{r}
-# filter out missing by group
-filt <- nonmissing_filter(ibd2)
+filt <- imd_filter(ibd2)
 ibd3 <- applyFilt(filt, ibd2)
-groups <- list(which(gdf$Group == "CD"), which(gdf$Group == "UC"))
-edata <- transform_raw_data_clr(ibd3$e_data[,-1])
-pvals <- ttest_rrna(edata, paired = FALSE, groups = groups)
 ```
 
-```{r}
-nmpg <- nonmissing_per_group(ibd3)
-tot <- nmpg$nonmiss_totals
-pdat <- as.data.frame(cbind(tot, pval=pvals))
-```
 
-```{r}
-ggplot(pdat) + geom_point(aes(CD, UC, col = pval), alpha = 0.3) + viridis::scale_color_viridis()
-pdat %>% filter(pval < 0.05) %>% ggplot() + geom_point(aes(CD, UC, col = pval), alpha = 0.3) + 
-  viridis::scale_color_viridis()
-```
 
-### ALDEx
-```{r ALDEx2 p-values, echo = FALSE, message = FALSE, warning = FALSE}
-dat <- ibd3$e_data[,-1]
-gdf <- attr(ibd3, "group_DF")
-conds <- gdf$Group
-mc <- 128
-x <- ALDEx2::aldex.clr(dat, conds, mc.samples = mc, denom = "all")
-source('C:/Users/joha328/Documents/ALDEx2/R/clr_ttest.r')
-source('C:/Users/joha328/Documents/ALDEx2/R/progress.R')
-source('C:/Users/joha328/Documents/ALDEx2/R/stats.fast.R')
-xt <- aldex.ttest(x, conds, paired.test = FALSE)
-# xt <- readRDS("C:/Users/joha328/Documents/ALDEx2/inst/xt.rds")
-pvals <- xt[,1]
-```
+<!-- ```{r echo = FALSE} -->
+<!-- ttest_rrna <- function(edata, paired = FALSE, groups = NULL) { -->
+
+<!--   # split data into groups -->
+<!--   ncols <- ncol(edata) -->
+<!--   nrows <- nrow(edata) -->
+<!-- # browser() -->
+<!--   if (is.null(groups)) { -->
+<!--     df1 <- edata[,1:floor(ncols/2)] -->
+<!--     df2 <- edata[,floor(ncols/2):ncols] -->
+<!--   } else { -->
+<!--     df1 <- edata[,groups[[1]]] -->
+<!--     df2 <- edata[,groups[[2]]] -->
+<!--   } -->
+
+<!--   # run tests, return p-values -->
+<!--   if (!paired) { -->
+<!--     return(sapply(1:nrows, function(i) t.test(df2[i,], df1[i,])$p.value)) -->
+<!--   } else { -->
+<!--     if (ncol(df1) != ncol(df2)) stop("Not paired data") -->
+<!--     return(sapply(1:nrows, function(i) t.test(df2[i,] - df1[i,])$p.value)) -->
+<!--   } -->
+<!-- } -->
+
+<!-- transform_raw_data_clr <- function(rawdata, shift = 0.5) { -->
+
+<!--   # log transform and shift data -->
+<!--   logdata <- log2(rawdata + shift) -->
+
+<!--   # denominator -->
+<!--   transdata <- apply(logdata, 2, function(x){x - mean(x)}) -->
+
+<!--   return(transdata) -->
+<!-- } -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- # filter out missing by group -->
+<!-- filt <- nonmissing_filter(ibd2) -->
+<!-- ibd3 <- applyFilt(filt, ibd2) -->
+<!-- groups <- list(which(gdf$Group == "CD"), which(gdf$Group == "UC")) -->
+<!-- edata <- transform_raw_data_clr(ibd3$e_data[,-1]) -->
+<!-- pvals <- ttest_rrna(edata, paired = FALSE, groups = groups) -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- nmpg <- nonmissing_per_group(ibd3) -->
+<!-- tot <- nmpg$nonmiss_totals -->
+<!-- pdat <- as.data.frame(cbind(tot, pval=pvals)) -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- ggplot(pdat) + geom_point(aes(CD, UC, col = pval), alpha = 0.3) + viridis::scale_color_viridis() -->
+
+<!-- pdat %>% filter(pval < 0.05) %>% ggplot() + geom_point(aes(CD, UC, col = pval), alpha = 0.3) +  -->
+<!--   viridis::scale_color_viridis() -->
+
+<!-- nonsig <- pdat %>% filter(pval > 0.05) -->
+<!-- ggplot(nonsig) + geom_point(aes(CD, UC, col = pval), alpha = 0.3) +  -->
+<!--   viridis::scale_color_viridis() -->
+<!-- lm(UC ~ CD, data = nonsig)$coef -->
+<!-- ``` -->
+
+
+
+<!-- <!-- ### ALDEx --> -->
+<!-- ```{r ALDEx2 p-values, echo = FALSE, message = FALSE, warning = FALSE, eval = FALSE} -->
+<!-- dat <- ibd3$e_data[,-1] -->
+<!-- gdf <- attr(ibd3, "group_DF") -->
+<!-- conds <- gdf$Group -->
+<!-- mc <- 128 -->
+<!-- x <- ALDEx2::aldex.clr(dat, conds, mc.samples = mc, denom = "all") -->
+<!-- source('C:/Users/joha328/Documents/ALDEx2/R/clr_ttest.r') -->
+<!-- source('C:/Users/joha328/Documents/ALDEx2/R/progress.R') -->
+<!-- source('C:/Users/joha328/Documents/ALDEx2/R/stats.fast.R') -->
+<!-- xt <- aldex.ttest(x, conds, paired.test = FALSE) -->
+<!-- # xt <- readRDS("C:/Users/joha328/Documents/ALDEx2/inst/xt.rds") -->
+<!-- pvals <- xt[,1] -->
+<!-- ``` -->
