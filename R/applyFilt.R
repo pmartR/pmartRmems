@@ -11,6 +11,51 @@ applyFilt <- function(filter_object, rRNAdata, ...) {
   UseMethod("applyFilt")
 }
 
+
+
+
+#' @export
+#' @name applyFilt
+#' @rdname applyFilt
+applyFilt.fdataFilt <- function(filter_object, rRNAdata) {
+
+  fdata_cname <- attr(rRNAdata, "cnames")$fdata_cname
+  edata_cname <- attr(rRNAdata, "cnames")$edata_cname
+
+  # filter samples from f_data
+  samples_keep_fdata <- !(rRNAdata$f_data[[fdata_cname]] %in% filter_object)
+  new_fdata <- rRNAdata$f_data[samples_keep_fdata, ]
+
+  # filter samples from e_data
+  samples_keep_edata <- !(names(rRNAdata$e_data) %in% filter_object)
+  new_edata <- rRNAdata$e_data[, samples_keep_edata]
+
+  results <- rRNAdata
+  results$e_data <- new_edata
+  results$f_data <- droplevels(new_fdata)
+
+  # if group attribute is present, re-run group_designation in case filtering any items
+  # impacted the group structure
+  if (!is.null(attr(results, "group_DF"))){
+    results <- group_designation(results,
+                                 main_effects = attr(attr(rRNAdata, "group_DF"), "main_effects"))
+  } else {
+    # Update attributes (7/11/2016 by KS) - this is being done already in group_designation
+    attributes(results)$data_info$num_edata <- length(unique(results$e_data[, edata_cname]))
+    attributes(results)$data_info$num_miss_obs <-
+      sum(is.na(results$e_data[,-which(names(results$e_data) == edata_cname)]))
+    attributes(results)$data_info$num_prop_missing <-
+      mean(is.na(results$e_data[,-which(names(results$e_data) == edata_cname)]))
+    attributes(results)$data_info$num_samps <- ncol(results$e_data) - 1
+  }
+
+  return(results)
+}
+
+
+
+
+
 #' @export
 #' @name applyFilt
 #' @rdname applyFilt
@@ -74,9 +119,8 @@ applyFilt.imdFilt <- function(filter_object, rRNAdata, min_nonmiss = 2) {
     attr(results, "data_info")$num_emeta <- num_emeta
   }
 
+  return(results)
 }
-
-
 
 
 anova_filter <- function(nonmiss_per_group, min_nonmiss_anova=2, cname_id){
@@ -89,7 +133,8 @@ anova_filter <- function(nonmiss_per_group, min_nonmiss_anova=2, cname_id){
   }
 
   # check that nonmiss_per_group is a list of length 2 #
-  if(class(nonmiss_per_group) != "list" | length(nonmiss_per_group)!=2) stop("nonmiss_per_group must be a list of length 2.")
+  if(class(nonmiss_per_group) != "list" | length(nonmiss_per_group)!=2)
+    stop("nonmiss_per_group must be a list of length 2.")
 
   # column names of nonmiss_per_group$nonmiss_totals
   my.names <- names(nonmiss_per_group$nonmiss_totals)
@@ -98,7 +143,8 @@ anova_filter <- function(nonmiss_per_group, min_nonmiss_anova=2, cname_id){
   my.names <- my.names[-inds.names] # remove cname_id and "NA" (if there's a column named "NA")
 
   # need at least n=2 per group in at least 2 groups in order to keep the biomolecule
-  temp <- (nonmiss_per_group$nonmiss_totals[,which(names(nonmiss_per_group$nonmiss_totals) %in% my.names)] >= min_nonmiss_anova)
+  temp <- (nonmiss_per_group$nonmiss_totals[,which(names(nonmiss_per_group$nonmiss_totals) %in%
+                                                     my.names)] >= min_nonmiss_anova)
 
   # sum the number of groups that meet the nonmissing per group requirement
   temp2 <- rowSums(temp)
