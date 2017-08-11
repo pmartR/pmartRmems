@@ -1,0 +1,86 @@
+---
+title: "Scaling Factor in Simulated Data"
+author: "Thomas Johansen"
+date: "July 25, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r}
+library(pmartRmems)
+library(dplyr)
+library(ggplot2)
+```
+
+
+```{r subset factor levels}
+soil2 <- group_designation(soil, c("Time", "Treatment"))
+oldgdf <- attributes(soil2)$group_DF
+gdf <- oldgdf %>% filter(Treatment != "anaerobic", Time != "t9d")
+samps <- as.character(gdf$RNA)
+(attributes(soil2)$group_DF <- gdf)
+soil2$e_data <- soil$e_data %>% select(OTU, one_of(samps))
+```
+
+```{r}
+source('sample_library_sizes.R')
+```
+
+#### Distribution of Zeros
+```{r fig.show = "hold", out.width = "50%", fig.align = "default"}
+temp <- soil2$e_data
+df <- temp[rowSums(temp[,-1]) != 0, ]
+
+temp <- df[,-1]
+notzero <- temp > 0
+medreads <- sapply(1:nrow(df), function(i) median(as.numeric(temp[i, notzero[i, ]])))
+num_nonzeros <- rowSums(notzero)
+
+zerodata <- data.frame(OTU = df$OTU, Median_reads = medreads, Num_nonzeros = as.factor(num_nonzeros))
+
+ggplot(zerodata) + 
+  geom_boxplot(aes(Num_nonzeros, Median_reads, group = Num_nonzeros), fill = "skyblue") +
+  scale_y_log10() + 
+  labs(x = "Nonzero Observations", y = "Median Reads (log scale)", title = "Soil Data")
+table(zerodata$Num_nonzeros)
+
+
+plot_nonzero_per_group <- function(exponent = NULL, transfun = NULL) {
+  edata <- soil2$e_data
+  groups <- list(c(1,3,5,7,9), c(2,4,6,8,10))
+  if (is.null(transfun)) {
+    transfun <- function(i) i^exponent
+    subtitle <- paste0("Transform function: i^", exponent)
+  } else {
+    subtitle <- paste("Transform function:", deparse(transfun)[[2]])
+  }
+  simdata <- simulate_count_data(edata[,-1], treatment_cols = groups[[2]], 
+                                         nTP = 100, effect_size = 10, transfun = transfun)
+  df <- simdata[[1]][rowSums(simdata[[1]]) != 0, ]
+  edata2 <- edata[rowSums(simdata[[1]]) != 0, ]
+  
+  temp <- df
+  notzero <- temp > 0
+  medreads <- sapply(1:nrow(df), function(i) median(as.numeric(temp[i, notzero[i, ]])))
+  num_nonzeros <- rowSums(notzero)
+  
+  zerodata <- data.frame(OTU = edata2$OTU, Median_reads = medreads, Num_nonzeros = as.factor(num_nonzeros))
+  
+  p <- ggplot(zerodata) + 
+    geom_boxplot(aes(Num_nonzeros, Median_reads, group = Num_nonzeros), fill = "skyblue") +
+    scale_y_log10() + 
+    labs(x = "Nonzero Observations", y = "Median Reads (log scale)", title = "Simulated Data",
+         subtitle = subtitle)
+  print(table(zerodata$Num_nonzeros))
+  return(p)
+}
+
+exponents <- c(1, 0.5, 2, 3)
+lapply(exponents, plot_nonzero_per_group)
+
+plot_nonzero_per_group(transfun = function(i) log(i + 1))
+```
+

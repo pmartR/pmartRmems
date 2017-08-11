@@ -1,0 +1,62 @@
+---
+title: "Test subset_filter"
+author: "Thomas Johansen"
+date: "August 2, 2017"
+output: 
+  html_document: 
+    toc: yes
+---
+
+```{r echo = FALSE}
+options(width = 100)
+```
+
+#### f_data
+```{r}
+library(pmartRmems)
+data("soil")
+soil$f_data
+```
+
+## Use Group Designation
+```{r}
+soil2 <- group_designation(soil, c("Time", "Treatment"))
+attr(soil2, "group_DF")
+```
+
+### Keep aerobic and control groups, time 0 & 94 with 'grp_level_keep'
+```{r}
+(filt <- subset_filter(soil2, grp_level_keep = c("t0_none", "t94d_aerobic")))
+soil3 <- applyFilt(filt, soil2)
+attr(soil3, "group_DF")
+names(soil3$e_data)
+soil3$f_data
+```
+
+### Remove aerobic group with 'grp_level_rmv'
+```{r}
+(filt <- subset_filter(soil2, grp_level_rmv = c("t94d_aerobic", "t9d_aerobic")))
+soil3 <- applyFilt(filt, soil2)
+attr(soil3, "group_DF")
+names(soil3$e_data)
+soil3$f_data
+```
+
+## Filter Straight From f_data
+### Keep only cores 14 and 34 with 'cname' and 'level_keep'
+```{r}
+(filt <- subset_filter(soil2, cname = "Core", level_keep = c("pf14", "pf34")))
+soil3 <- applyFilt(filt, soil2)
+attr(soil3, "group_DF")
+names(soil3$e_data)
+soil3$f_data
+```
+
+### Remove anaerobic treatment with 'cname' and 'level_rmv'
+```{r}
+(filt <- subset_filter(soil2, cname = "Treatment", level_rmv = "anaerobic"))
+soil3 <- applyFilt(filt, soil2)
+attr(soil3, "group_DF")
+names(soil3$e_data)
+soil3$f_data
+```

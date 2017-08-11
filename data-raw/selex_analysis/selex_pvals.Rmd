@@ -1,0 +1,60 @@
+---
+title: "Selex P-values - Median vs. Mean"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r, message = FALSE}
+library(ALDEx2)
+library(pmartRmems)
+library(ggplot2)
+library(tidyverse)
+data("selex")
+# str(selex)
+```
+
+```{r}
+conds <- c(rep("NS", 7), rep("S", 7))
+# x <- aldex.clr(selex, conds, mc.samples=128, denom="iqlr", verbose=TRUE)
+# xt_mean <- aldex.ttest(x, conds, paired.test=TRUE)
+# saveRDS(xt_mean, "data-raw/selex_mean.rds")
+xt_mean <- readRDS("selex_mean.rds")
+# xt_median <- aldex.ttest(x, conds, paired.test=TRUE)
+# saveRDS(xt_median, "data-raw/selex_median.rds")
+xt_median <- readRDS("selex_median.rds")
+pdat <- as.data.frame(cbind(xt_mean, xt_median)) 
+names(pdat) <- c("mean_p", "mean_p_adj", "med_p", "med_p_adj")
+pdat <- pdat %>% mutate(OTU = rownames(.)) %>% select(OTU, everything())
+# plotdat <- pdat %>% gather("method", "p_val", 1:4) %>% mutate(sig = p_val < 0.05)
+sig <- 0.05
+noadjdat <- pdat %>% select(OTU, mean_p, med_p) %>% 
+  mutate(which_sig = ifelse(mean_p < sig & med_p > sig, "mean_p", 
+                            ifelse(mean_p > sig & med_p < sig, "med_p", 
+                                   ifelse(mean_p < sig & med_p < sig, "both", "neither"))))
+adjdat <- pdat %>% select(OTU, mean_p_adj, med_p_adj) %>% 
+  mutate(which_sig = ifelse(mean_p_adj < sig & med_p_adj > sig, "mean_p", 
+                            ifelse(mean_p_adj > sig & med_p_adj < sig, "med_p", 
+                                   ifelse(mean_p_adj < sig & med_p_adj < sig, "both", "neither"))))
+```
+
+```{r fig.show = "hold", out.width = "50%", fig.align = "default"}
+theme_set(theme_grey(base_size = 16)) 
+ggplot(noadjdat) + geom_point(aes(mean_p, med_p, col = which_sig)) + 
+  labs(title = "Unadjusted P-values") + guides(colour = guide_legend(override.aes = list(size=4)))
+ggplot(adjdat) + geom_point(aes(mean_p_adj, med_p_adj, col = which_sig)) + 
+  labs(title = "Adjusted P-values") + guides(colour = guide_legend(override.aes = list(size=4)))
+```
+
+#### unadjusted significant 
+```{r}
+table(noadjdat$which_sig)
+```
+
+#### adjusted significant
+```{r}
+table(adjdat$which_sig)
+```
+
