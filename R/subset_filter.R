@@ -6,7 +6,7 @@
 #' @export
 #'
 #' @examples
-fdata_filter <- function(rRNAdata, grp_level_rmv = NULL, grp_level_keep = NULL,
+subset_filter <- function(rRNAdata, grp_level_rmv = NULL, grp_level_keep = NULL,
                          cname = NULL, level_rmv = NULL, level_keep = NULL) {
 
   #### Initial Error Checks ####
@@ -79,7 +79,7 @@ fdata_filter <- function(rRNAdata, grp_level_rmv = NULL, grp_level_keep = NULL,
 
   output <- as.character(output)
   orig_class <- class(output)
-  class(output) <- c("fdataFilt", orig_class)
+  class(output) <- c("subsetFilt", orig_class)
 
   return(output)
 }

@@ -1,0 +1,232 @@
+---
+title: "P-values for simulated data"
+author: "Thomas Johansen"
+date: "July 27, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+set.seed(78)
+```
+
+```{r libraries, message = FALSE}
+library(pmartRmems)
+library(ggplot2)
+library(dplyr)
+```
+
+
+```{r load data}
+data("soil")
+source('sample_library_sizes.R')
+# source('data-raw/sample_library_sizes.R')
+```
+
+## t0 vs. t94 aerobic
+```{r subset factor levels}
+soil2 <- group_designation(soil, c("Time", "Treatment"))
+oldgdf <- attributes(soil2)$group_DF
+gdf <- oldgdf %>% filter(Treatment != "anaerobic", Time != "t9d")
+samps <- as.character(gdf$RNA)
+(attributes(soil2)$group_DF <- gdf)
+soil2$e_data <- soil$e_data %>% select(OTU, one_of(samps))
+```
+
+```{r simulate data}
+simdata <- simulate_count_data(soil2$e_data[,-1], treatment_cols = 2*1:5, nTP = 100, effect_size = 10,
+                               transfun = function(i) {i^2})
+```
+
+```{r run test on base data}
+ttest_rrna <- function(edata, paired = TRUE, groups = NULL) {
+
+  # split data into groups
+  ncols <- ncol(edata)
+  nrows <- nrow(edata)
+# browser()
+  if (is.null(groups)) {
+    df1 <- edata[,1:floor(ncols/2)]
+    df2 <- edata[,floor(ncols/2):ncols]
+  } else {
+    df1 <- edata[,groups[[1]]]
+    df2 <- edata[,groups[[2]]]
+  }
+
+  # run tests, return p-values
+  if (!paired) {
+    return(sapply(1:nrows, function(i) t.test(df2[i,], df1[i,])$p.value))
+  } else {
+    if (ncol(df1) != ncol(df2)) stop("Not paired data")
+    return(sapply(1:nrows, function(i) t.test(df2[i,] - df1[i,])$p.value))
+  }
+}
+
+soil_temp0 <- soil2
+soil_temp0$e_data[,-1] <- simdata$sim_data_base
+filt <- imd_filter(soil_temp0)
+soil_temp <- applyFilt(filt, soil_temp0)
+soil_temp <- transform_data(soil_temp)
+groups <- list(2*1:5, 2*1:5 + 1)
+pvals_base <- ttest_rrna(soil_temp$e_data, groups = groups)
+```
+
+
+```{r filter out missing per group}
+soil30 <- soil2
+soil30$e_data[,-1] <- as.data.frame(simdata[[1]])
+# store vector of significant OTUs
+sig_otus <- soil30$e_data[[1]][simdata[[2]]] 
+filt <- imd_filter(soil30)
+soil3 <- applyFilt(filt, soil30)
+
+# significant rows in filtered data
+sigvec <- soil3$e_data[[1]] %in% sig_otus
+
+# transform data
+soil3 <- transform_data(soil3)
+```
+
+
+```{r t-test}
+groups <- list(2*1:5, 2*1:5 + 1)
+pvals <- ttest_rrna(soil3$e_data, groups = groups)
+pdat <- data.frame(OTU = soil3$e_data[[1]], pval = pvals, base_pvals = pvals_base, sim_sig = sigvec) %>% 
+  mutate(obs_sig = pval < 0.05, base_sig = base_pvals < 0.05)
+
+```
+
+```{r plot p-values}
+ggplot(pdat) + geom_point(aes(base_pvals, pvals, col = sim_sig)) + 
+  scale_y_continuous(breaks = 0.1*0:10) +
+  labs(title = "P-values for each OTU, before and after adding signal",  
+       subtitle = "Effect size = 10",
+       x = "Before Signal",
+       y = "After Signal",
+       col = "Signal Added")
+```
+
+```{r analyze simulated significant p-values}
+weird_otus <- pdat %>% filter(pval / base_pvals > 1 & sim_sig == TRUE)
+
+wl <- list(base_data = soil_temp0$e_data %>% filter(OTU %in% weird_otus[[1]]),
+           base_data_trans = soil_temp$e_data %>% filter(OTU %in% weird_otus[[1]]),
+           signal_data = soil30$e_data %>% filter(OTU %in% weird_otus[[1]]),
+           signal_data_trans = soil3$e_data %>% filter(OTU %in% weird_otus[[1]]))
+iotu <- 2
+weird_otus
+```
+
+As an example, we will show the data for `r as.character(weird_otus$OTU[iotu])` before and after transformation, as well as before and after signal was added. 
+
+```{r}
+df_list <- lapply(wl, function(x) {
+        vec <- as.numeric(x[iotu,-1])
+        df <- data.frame(group1 = vec[2*1:5], group2 = vec[2*1:5 - 1]) %>%
+            mutate(diff = group2 - group1)
+        return(df)
+    }
+)
+df_list
+```
+
+
+<!-- #### Trying shift -->
+```{r simulate data2}
+simdata <- simulate_count_data(soil2$e_data[,-1], treatment_cols = 2*1:5, nTP = 100, effect_size = 10,
+                               transfun = function(i) {i^2}, shift = TRUE)
+```
+
+```{r run test on base data2}
+ttest_rrna <- function(edata, paired = TRUE, groups = NULL) {
+
+  # split data into groups
+  ncols <- ncol(edata)
+  nrows <- nrow(edata)
+# browser()
+  if (is.null(groups)) {
+    df1 <- edata[,1:floor(ncols/2)]
+    df2 <- edata[,floor(ncols/2):ncols]
+  } else {
+    df1 <- edata[,groups[[1]]]
+    df2 <- edata[,groups[[2]]]
+  }
+
+  # run tests, return p-values
+  if (!paired) {
+    return(sapply(1:nrows, function(i) t.test(df2[i,], df1[i,])$p.value))
+  } else {
+    if (ncol(df1) != ncol(df2)) stop("Not paired data")
+    return(sapply(1:nrows, function(i) t.test(df2[i,] - df1[i,])$p.value))
+  }
+}
+
+soil_temp0 <- soil2
+soil_temp0$e_data[,-1] <- simdata$sim_data_base
+filt <- imd_filter(soil_temp0)
+soil_temp <- applyFilt(filt, soil_temp0)
+soil_temp <- transform_data(soil_temp)
+groups <- list(2*1:5, 2*1:5 + 1)
+pvals_base <- ttest_rrna(soil_temp$e_data, groups = groups)
+```
+
+
+```{r filter out missing per group2}
+soil30 <- soil2
+soil30$e_data[,-1] <- as.data.frame(simdata[[1]])
+# store vector of significant OTUs
+sig_otus <- soil30$e_data[[1]][simdata[[2]]] 
+filt <- imd_filter(soil30)
+soil3 <- applyFilt(filt, soil30)
+
+# throw out OTUs that aren't in the base data (i.e. data without signal)
+soil3$e_data <- soil3$e_data[soil3$e_data[[1]] %in% soil_temp$e_data[[1]],]
+
+# significant rows in filtered data
+sigvec <- soil3$e_data[[1]] %in% sig_otus
+
+```
+
+```{r transform data2}
+soil3 <- transform_data(soil3)
+```
+
+
+```{r t-test2}
+groups <- list(2*1:5, 2*1:5 + 1)
+pvals <- ttest_rrna(soil3$e_data, groups = groups)
+pdat <- data.frame(OTU = soil3$e_data[[1]], pval = pvals, base_pvals = pvals_base, sim_sig = sigvec) %>% 
+  mutate(obs_sig = pval < 0.05, base_sig = base_pvals < 0.05)
+
+```
+
+```{r plot p-values2}
+ggplot(pdat) + geom_point(aes(base_pvals, pvals, col = sim_sig)) +
+  scale_y_continuous(breaks = 0.1*0:10) +
+  labs(title = "Results after applying a shift of half the effect size to 'significant' zeros", 
+       subtitle = "Effect size = 10",
+       x = "Before Signal",
+       y = "After Signal",
+       col = "Signal Added") 
+```
+
+```{r}
+# otu_compare <- weird_otus$OTU[iotu]
+# wl2 <- list(base_data = soil_temp0$e_data %>% filter(OTU == otu_compare),
+#            base_data_trans = soil_temp$e_data %>% filter(OTU == otu_compare),
+#            signal_data = soil30$e_data %>% filter(OTU == otu_compare),
+#            signal_data_trans = soil3$e_data %>% filter(OTU == otu_compare))
+# 
+# df_list2 <- lapply(wl2, function(x) {
+#         vec <- as.numeric(x[1,-1])
+#         df <- data.frame(group1 = vec[2*1:5], group2 = vec[2*1:5 - 1]) %>%
+#             mutate(diff = group2 - group1)
+#         return(df)
+#     }
+# )
+```
+
+
+
+
+

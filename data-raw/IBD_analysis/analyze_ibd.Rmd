@@ -131,35 +131,205 @@ plotdat <- merge(tempdat, dotdf) %>% mutate(num_datapoints = count * dotsize)
 
 ggplot(plotdat) + 
   geom_point(aes(diagnosis_full, count, col = diagnosis_full, size = dotsize)) +
-  annotate("text", x = plotdat$diagnosis_full, y = plotdat$count, label = plotdat$num_datapoints) +
+  annotate("text", x = plotdat$diagnosis_full, y = plotdat$count, label = plotdat$dotsize) +
   labs(x = "Diagnosis", y = "Number of Visits", title = "Patient Visits by Diagnosis Type", 
-       subtitle = "Points labeled by the total number of data points available", 
-       size = "Patient\nCount") +
-  guides(col = "none") +
+       subtitle = "Points labeled by patient count") +
+  guides(col = "none", size = "none") +
   scale_y_continuous(breaks = 1:10) + 
   scale_size(breaks = 2*1:5, range = c(2, 10))
 ```
 
+```{r fig.show = "hold", out.width = "50%", fig.align = "default"}
+# patients
+plotdat <- dotdf %>% group_by(diagnosis_full) %>% arrange(desc(count)) %>% 
+  mutate(cum_patients = cumsum(dotsize)) #%>% 
+  # ungroup() %>% rbind(list(1, "HC", 9, 9)) # only for visual purposes!
 
-### Simulated Data
+ggplot(plotdat) + geom_point(aes(count, cum_patients, 
+                                 group = diagnosis_full, col = diagnosis_full), size = 3) +
+  geom_line(aes(count, cum_patients, group = diagnosis_full, col = diagnosis_full)) +
+  scale_x_continuous(breaks = 0:10) + 
+  scale_y_continuous(breaks = 10*0:6) + 
+  labs(x = "Number of Visits", y = "Patient Count", col = "Diagnosis", 
+       title = "Patients left in study\nwhen filtered by number of visits") +
+  theme_gray(base_size = 16)
 
+# data points
+plotdat <- dotdf %>% 
+  mutate(num_datapoints = count * dotsize) %>%
+  group_by(diagnosis_full) %>% 
+  arrange(desc(count)) %>% 
+  mutate(cum_datapoints = cumsum(num_datapoints)) #%>%
+  # ungroup() %>% rbind(list(1, "HC", 3, 0, 60)) # only for visual purposes!
+
+ggplot(plotdat) + geom_point(aes(count, cum_datapoints,
+                                 group = diagnosis_full, col = diagnosis_full), size = 3) +
+  geom_line(aes(count, cum_datapoints, group = diagnosis_full, col = diagnosis_full)) +
+  scale_x_continuous(breaks = 0:10) +
+  scale_y_continuous(breaks = seq(0, 350, by = 50)) +
+  labs(x = "Number of Visits", y = "Patient Count", col = "Diagnosis",
+       title = "Total data points in study\nwhen filtered by number of visits") +
+  theme_gray(base_size = 16)
+```
+
+
+
+### GLM
+
+#### Metadata for Healthy Patients
 ```{r}
-ibd2 <- group_designation(ibd, "diagnosis_full")
-oldgdf <- attributes(ibd2)$group_DF
-gdf <- oldgdf %>% filter(Group %in% c("CD","HC"))
-samps <- as.character(gdf$sample_name)
-attributes(ibd2)$group_DF <- gdf
-ibd2$e_data <- ibd$e_data %>% select(OTU, one_of(samps))
+fdata <- ibd$f_data
+tmp <- fdata %>% filter(diagnosis_full == "HC", timepoint == 1) %>% 
+  select(patientnumber, bmi, calprotectin, sex)
+tmp$calprotectin <- as.numeric(tmp$calprotectin)
+tmp$sex <- as.factor(tmp$sex)
+summary(tmp[,-1])
+# calprotectin = surrogate for inflamatory activity
+```
+
+#### Patients with more than one sample at a time point
+```{r}
+dfdbl <- fdata %>% group_by(patientnumber, timepoint) %>% summarise(count =  n()) %>% 
+  filter(count > 1)
+# fdata %>% filter(patientnumber == 1, timepoint == 3)
+
+choose_valid_sample <- function(patient, time) {
+  samp_names <- subset(ibd$f_data, patientnumber == patient & timepoint == time)$sample_name
+  dfreads <- ibd$e_data[, samp_names]
+  csums <- colSums(dfreads)
+  # valid_samp <- names(dfreads)[which.max(csums)]
+  # return(list(valid_samp, csums, head(dfreads)))
+  
+  # tmp <- ibd$e_data[,names(csums)]
+  # pnonmiss <- apply(tmp, 2, function(x) mean(x > 0))
+  # return(list(csums, pnonmiss))
+  return(csums)
+}
+read_sums <- lapply(1:nrow(dfdbl), function(i) choose_valid_sample(dfdbl[i,][[1]], dfdbl[i,][[2]]))
+# names(read_sums) <- paste0("patient ", dfdbl[[1]], ", time ", dfdbl[[2]])
+sums_mat <- as.data.frame(do.call(rbind, read_sums))
+names(sums_mat) <- c("Sample1", "Sample2")
+sums_mat <- cbind(as.matrix(dfdbl[,1:2]), sums_mat)
+sums_mat$Ratio <- sums_mat$Sample1 / sums_mat$Sample2
+sums_mat$Ratio[sums_mat$Ratio < 1] <- 1/sums_mat$Ratio[sums_mat$Ratio < 1]
+sums_mat$Ratio <- round(sums_mat$Ratio)
+sums_mat %>% arrange(Ratio)
+```
+Demographics of these odd patients
+```{r}
+weird_patients <- sums_mat$patientnumber[sums_mat$Ratio < 10]
+ibd$f_data %>% filter(patientnumber %in% weird_patients, !duplicated(patientnumber)) %>% 
+  group_by(diagnosis_full, sex) %>% summarise(n = n())
+```
+
+#### Filter out patients that came less than 5 times
+```{r}
+# newf <- fdata %>% filter(diagnosis_full %in% c("HC", "CD", "UC"), timepoint == 5)
+# patients <- unique(newf$patientnumber)
+# ibd2 <- ibd
+# # dim(ibd2$f_data)
+# filt <- fdata_filter(ibd2, cname = "patientnumber", level_keep = patients)
+# ibd2 <- applyFilt(filt, ibd2)
+# ibd2$f_data %>% group_by(diagnosis_full) %>% summarise(n = n())
+filt <- fdata_filter(ibd, cname = "timepoint", level_keep = 1:5)
+ibd2 <- applyFilt(filt, ibd)
+filt <- fdata_filter(ibd2, cname = "diagnosis_full", level_keep = c("HC", "CD", "UC"))
+ibd2 <- applyFilt(filt, ibd2)
+fd <- ibd2$f_data
+```
+#### diagnosis
+```{r}
+(dnosis <- table(fd$diagnosis_full))
+```
+#### timepoint
+```{r}
+table(fd$timepoint)
+```
+#### sex of patients by diagnosis type
+```{r}
+tmp <- fd %>% filter(!duplicated(patientnumber))
+table(tmp$diagnosis_full, tmp$sex)
+```
+
+
+#### Look for outliers with PCoA
+```{r message = FALSE, echo = TRUE}
+library(vegan)
+library(ape)
+# D <- vegdist(t(ibd2$e_data[,-1]))
+# saveRDS(D, "data-raw/dist_mat_ibd.rds")
+D <- readRDS("dist_mat_ibd.rds")
+res <- pcoa(D)
+rownames(res$vectors) <- NULL
+biplot(res)
+```
+
+#### Sample 9 patients from CD and UC
+```{r}
+nmale <- 3
+nfemale <- 6
+
+newfd <- fd %>% filter(timepoint == 5)
+
+dfCD <- newfd %>% filter(diagnosis_full == "CD", !duplicated(patientnumber)) %>% 
+  select(patientnumber, sex)
+CDmale <- sample(dfCD$patientnumber[dfCD$sex == "male"], nmale)
+CDfemale <- sample(dfCD$patientnumber[dfCD$sex == "female"], nfemale)
+
+dfUC <- newfd %>% filter(diagnosis_full == "UC", !duplicated(patientnumber)) %>% 
+  select(patientnumber, sex)
+UCmale <- sample(dfUC$patientnumber[dfUC$sex == "male"], nmale)
+UCfemale <- sample(dfUC$patientnumber[dfUC$sex == "female"], nfemale)
+
+dfHC <- newfd %>% filter(diagnosis_full == "HC", !duplicated(patientnumber)) %>% 
+  select(patientnumber, sex)
+HCpatients <- dfHC$patientnumber
+
+new_patients <- c(CDmale, CDfemale, UCmale, UCfemale, HCpatients)
+```
+
+##### Make sure gender is evenly distributed
+```{r}
+ffilt <- fd %>% filter(patientnumber %in% new_patients)
+ffilt %>% filter(!duplicated(patientnumber)) %>% group_by(diagnosis_full, sex) %>% summarise(n = n())
 ```
 
 ```{r}
-source('data-raw/sample_library_sizes.R')
+filt <- fdata_filter(ibd2, cname = "patientnumber", level_keep = new_patients)
+ibd_down <- applyFilt(filt, ibd2)
 ```
 
-```{r}
-filt <- imd_filter(ibd2)
-ibd3 <- applyFilt(filt, ibd2)
-```
+
+<!-- #### filter new data -->
+<!-- ```{r} -->
+<!-- filt <- fdata_filter(ibd2, cname = "patientnumber", level_keep = new_patients) -->
+
+<!-- ``` -->
+
+
+
+
+
+
+<!-- ### Simulated Data -->
+
+<!-- ```{r} -->
+<!-- ibd2 <- group_designation(ibd, "diagnosis_full") -->
+<!-- oldgdf <- attributes(ibd2)$group_DF -->
+<!-- gdf <- oldgdf %>% filter(Group %in% c("CD","HC")) -->
+<!-- samps <- as.character(gdf$sample_name) -->
+<!-- attributes(ibd2)$group_DF <- gdf -->
+<!-- ibd2$e_data <- ibd$e_data %>% select(OTU, one_of(samps)) -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- source('data-raw/sample_library_sizes.R') -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- filt <- imd_filter(ibd2) -->
+<!-- ibd3 <- applyFilt(filt, ibd2) -->
+<!-- ``` -->
 
 
 
@@ -228,7 +398,7 @@ ibd3 <- applyFilt(filt, ibd2)
 
 
 
-<!-- <!-- ### ALDEx --> -->
+<!-- <!-- ### ALDEx -->
 <!-- ```{r ALDEx2 p-values, echo = FALSE, message = FALSE, warning = FALSE, eval = FALSE} -->
 <!-- dat <- ibd3$e_data[,-1] -->
 <!-- gdf <- attr(ibd3, "group_DF") -->

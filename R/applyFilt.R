@@ -13,11 +13,148 @@ applyFilt <- function(filter_object, rRNAdata, ...) {
 
 
 
+#' @export
+#' @name applyFilt
+#' @rdname applyFilt
+applyFilt.customFilt <- function(filter_object, rRNAdata){
+
+
+  edata_cname <- attributes(rRNAdata)$cnames$edata_cname
+  fdata_cname <- attributes(rRNAdata)$cnames$fdata_cname
+  emeta_cname <- attributes(rRNAdata)$cnames$emeta_cname
+
+  #if filter_object contains removes
+  if(!is.null(filter_object$e_data_remove)||!is.null(filter_object$f_data_remove)||!is.null(filter_object$e_meta_remove)){
+
+    filter_object_new = list(edata_filt = filter_object$e_data_remove, emeta_filt = filter_object$e_meta_remove, samples_filt = filter_object$f_data_remove)
+
+    # check that edata_filt doesn't specify ALL the items in rRNAdata #
+    if(all(rRNAdata$e_data[, edata_cname] %in% filter_object_new$edata_filt)){stop("edata_filt specifies all the items in the data")}
+
+    # check that samples_filt doesn't specify ALL the items in rRNAdata #
+    if(all(rRNAdata$f_data[, fdata_cname] %in% filter_object_new$samples_filt)){stop("samples_filt specifies all the items in the data")}
+
+    # check that emeta_filt doesn't specify ALL the items in rRNAdata, emeta_filt is present #
+    if(!is.null(rRNAdata$e_meta[, emeta_cname])){
+      if(all(rRNAdata$e_meta[, emeta_cname] %in% filter_object_new$emeta_filt)){stop("emeta_filt specifies all the items in the data")}
+    }
+
+
+  }
+
+  else{
+    filter_object_new = list(edata_keep = filter_object$e_data_keep, emeta_keep = filter_object$e_meta_keep, samples_keep = filter_object$f_data_keep)
+
+    # check that edata_keep doesn't specify ALL the items in rRNAdata #
+    if(all(rRNAdata$e_data[, edata_cname] %in% filter_object_new$edata_keep)){stop("edata_keep specifies all the items in the data")}
+
+    # check that samples_keep doesn't specify ALL the items in rRNAdata #
+    if(all(rRNAdata$f_data[, fdata_cname] %in% filter_object_new$samples_keep)){stop("samples_keep specifies all the items in the data")}
+
+    # check that emeta_keep doesn't specify ALL the items in rRNAdata #
+    if(!is.null(rRNAdata$e_meta[, emeta_cname])){
+      if(all(rRNAdata$e_meta[, emeta_cname] %in% filter_object_new$emeta_keep)){stop("emeta_keep specifies all the items in the data")}
+
+    }
+  }
+
+  # call the function that does the filter application
+  results_pieces <- MSomics_filter_worker(rRNAdata = rRNAdata, filter_object = filter_object_new)
+
+  # return filtered data object #
+  results <- rRNAdata
+  results$e_data <- results_pieces$temp.pep2
+  results$f_data <- results_pieces$temp.samp2
+  if(!is.null(rRNAdata$e_meta)){ # if-statement added by Kelly 3/24/2017 #
+    results$e_meta <- data.frame(results_pieces$temp.meta1)
+    names(results$e_meta)[which(names(rRNAdata$e_meta) == emeta_cname)] <- emeta_cname
+  }else{
+    # e_meta is null
+    results$e_meta <- NULL
+  }
+
+  # remove any OTUs with all missing data
+  results <- remove_miss(results)
+
+
+  # if group attribute is present, re-run group_designation in case filtering any items impacted the group structure #
+  if(!is.null(attr(results, "group_DF"))){
+    results <- group_designation(rRNAdata = results, main_effects = attr(attr(rRNAdata, "group_DF"), "main_effects"), covariates = attr(attr(rRNAdata, "group_DF"), "covariates"), time_course = attr(attr(rRNAdata, "group_DF"), "time_course"))
+  }else{
+    # Update attributes (7/11/2016 by KS) - this is being done already in group_designation
+    attributes(results)$data_info$num_edata = length(unique(results$e_data[, edata_cname]))
+    attributes(results)$data_info$num_miss_obs = sum(is.na(results$e_data[,-which(names(results$e_data)==edata_cname)]))
+    attributes(results)$data_info$num_prop_missing = mean(is.na(results$e_data[,-which(names(results$e_data)==edata_cname)]))
+    attributes(results)$data_info$num_samps = ncol(results$e_data) - 1
+
+    if(!is.null(results$e_meta)){
+      # number of unique proteins that map to a peptide in e_data #
+      if(!is.null(emeta_cname)){
+        num_emeta = length(unique(results$e_meta[which(as.character(results$e_meta[, edata_cname]) %in% as.character(results$e_data[, edata_cname])), emeta_cname]))
+      }else{num_emeta = NULL}
+    }else{
+      num_emeta = NULL
+    }
+    attr(results, "data_info")$num_emeta = num_emeta
+    ## end of update attributes (7/11/2016 by KS)
+  }
+
+
+  # check to see whether a customFilt has already been run on rRNAdata #
+  if("customFilt" %in% names(attributes(rRNAdata)$filters)){
+    # yes, so be sure to keep track of this customFilt in a separate $filters attribute #
+
+    # get number of previous customFilts applied #
+    n_prev_filts <- length(grep("customFilt", names(attributes(rRNAdata)$filters)))
+    # will need to append this number + 1 to the end of the $filters$customFilt attribute #
+
+
+    # set attributes for which filters were run
+    attr(results, "filters")[[(paste("customFilt", n_prev_filts + 1, sep=""))]] <- list(report_text = "", threshold = c(), filtered = c())
+
+    n_edata_filtered <- nrow(rRNAdata$e_data) - nrow(results$e_data)
+    n_fdata_filtered <- nrow(rRNAdata$f_data) - nrow(results$f_data)
+    if(!is.null(rRNAdata$e_meta)){
+      n_emeta_filtered <- nrow(rRNAdata$e_meta) - nrow(results$e_meta)
+    }else{
+      n_emeta_filtered = NA
+    }
+    if(!is.null(rRNAdata$e_meta)){
+      attr(results, "filters")[[(paste("customFilt", n_prev_filts + 1, sep=""))]]$report_text <- paste("A custom filter was applied to the data, removing ", n_edata_filtered, " ", edata_cname, "s from e_data, ", n_emeta_filtered, " ", emeta_cname, "s from e_meta, and ", n_fdata_filtered, " ", fdata_cname, "s from f_data.", sep="")
+    }else{
+      attr(results, "filters")[[(paste("customFilt", n_prev_filts + 1, sep=""))]]$report_text <- paste("A custom filter was applied to the data, removing ", n_edata_filtered, " ", edata_cname, "s from e_data and ", n_fdata_filtered, " ", fdata_cname, "s from f_data.", sep="")
+    }
+    attr(results, "filters")[[(paste("customFilt", n_prev_filts + 1, sep=""))]]$filtered <- filter_object
+
+  }else{ # no previous customFilt, so go ahead and name the attribute like normal #
+
+    # set attributes for which filters were run
+    attr(results, "filters")$customFilt <- list(report_text = "", threshold = c(), filtered = c())
+    n_edata_filtered <- nrow(rRNAdata$e_data) - nrow(results$e_data)
+    n_fdata_filtered <- nrow(rRNAdata$f_data) - nrow(results$f_data)
+    if(!is.null(rRNAdata$e_meta)){
+      n_emeta_filtered <- nrow(rRNAdata$e_meta) - nrow(results$e_meta)
+    }else{
+      n_emeta_filtered = NA
+    }
+    if(!is.null(rRNAdata$e_meta)){
+      attr(results, "filters")$customFilt$report_text <- paste("A custom filter was applied to the data, removing ", n_edata_filtered, " ", edata_cname, "s from e_data, ", n_emeta_filtered, " ", emeta_cname, "s from e_meta, and ", n_fdata_filtered, " ", fdata_cname, "s from f_data.", sep="")
+    }else{
+      attr(results, "filters")$customFilt$report_text <- paste("A custom filter was applied to the data, removing ", n_edata_filtered, " ", edata_cname, "s from e_data and ", n_fdata_filtered, " ", fdata_cname, "s from f_data.", sep="")
+    }
+    attr(results, "filters")$customFilt$filtered <- filter_object
+  }
+  return(results)
+}
+
+
+
+
 
 #' @export
 #' @name applyFilt
 #' @rdname applyFilt
-applyFilt.fdataFilt <- function(filter_object, rRNAdata) {
+applyFilt.subsetFilt <- function(filter_object, rRNAdata) {
 
   fdata_cname <- attr(rRNAdata, "cnames")$fdata_cname
   edata_cname <- attr(rRNAdata, "cnames")$edata_cname
@@ -33,6 +170,9 @@ applyFilt.fdataFilt <- function(filter_object, rRNAdata) {
   results <- rRNAdata
   results$e_data <- new_edata
   results$f_data <- droplevels(new_fdata)
+
+  # remove any OTUs with all missing data
+  results <- remove_miss(results)
 
   # if group attribute is present, re-run group_designation in case filtering any items
   # impacted the group structure
